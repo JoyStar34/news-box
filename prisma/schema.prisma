@@ -1,0 +1,52 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Category {
+  AI
+  TECH
+  SCIENCE
+  ASTRONOMY
+  PAPER
+}
+
+model Source {
+  id               String    @id @default(cuid())
+  name             String
+  url              String    @unique
+  category         Category
+  priority         Int       @default(1)
+  isActive         Boolean   @default(true)
+  fetchIntervalMin Int       @default(360)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  articles         Article[]
+}
+
+model Article {
+  id           String    @id @default(cuid())
+  sourceId     String
+  source       Source    @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  title        String
+  summaryRaw   String?
+  summaryAi    String?
+  whyImportant String?
+  url          String    @unique
+  publishedAt  DateTime?
+  fetchedAt    DateTime  @default(now())
+  category     Category
+  score        Float     @default(0)
+  contentHash  String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([fetchedAt(sort: Desc)])
+  @@index([category, fetchedAt(sort: Desc)])
+  @@index([score(sort: Desc)])
+}
+
