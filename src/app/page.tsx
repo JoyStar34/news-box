@@ -6,6 +6,7 @@ import { buildDailyBrief } from "@/server/brief/dailyBrief";
 export const dynamic = "force-dynamic";
 
 const PAGE_SIZE = 12;
+type RangeKey = "24h" | "7d" | "30d";
 
 const categoryOptions: Array<{ label: string; value: "ALL" | Category }> = [
   { label: "全部", value: "ALL" },
@@ -15,6 +16,30 @@ const categoryOptions: Array<{ label: string; value: "ALL" | Category }> = [
   { label: "天文", value: Category.ASTRONOMY },
   { label: "论文", value: Category.PAPER },
 ];
+
+const rangeOptions: Array<{ label: string; value: RangeKey }> = [
+  { label: "24h", value: "24h" },
+  { label: "7d", value: "7d" },
+  { label: "30d", value: "30d" },
+];
+
+function buildRangeDate(range: string | undefined): Date | null {
+  if (!range) return null;
+  const now = Date.now();
+  const hour = 60 * 60 * 1000;
+  const map: Record<RangeKey, number> = {
+    "24h": 24 * hour,
+    "7d": 7 * 24 * hour,
+    "30d": 30 * 24 * hour,
+  };
+  if (!(range in map)) return null;
+  return new Date(now - map[range as RangeKey]);
+}
+
+function normalizeRange(range: string | undefined): RangeKey {
+  if (range === "7d" || range === "30d") return range;
+  return "24h";
+}
 
 function formatDate(date: Date | null): string {
   if (!date) return "未知时间";
@@ -27,35 +52,56 @@ function formatDate(date: Date | null): string {
   }).format(date);
 }
 
-function buildPageHref(page: number, category: string | undefined) {
+function buildPageHref(page: number, category: string | undefined, range: string | undefined) {
   const params = new URLSearchParams();
   if (page > 1) params.set("page", String(page));
   if (category) params.set("category", category);
+  if (range) params.set("range", range);
   const query = params.toString();
   return query ? `/?${query}` : "/";
 }
 
-function buildCategoryHref(category: string) {
-  if (category === "ALL") return "/";
-  return `/?category=${category}`;
+function buildCategoryHref(category: string, range: string | undefined) {
+  const params = new URLSearchParams();
+  if (category !== "ALL") params.set("category", category);
+  if (range) params.set("range", range);
+  const query = params.toString();
+  return query ? `/?${query}` : "/";
+}
+
+function buildRangeHref(range: string, category: string | undefined) {
+  const params = new URLSearchParams();
+  params.set("range", range);
+  if (category) params.set("category", category);
+  const query = params.toString();
+  return `/?${query}`;
 }
 
 export default async function Home({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string; category?: string }>;
+  searchParams: Promise<{ page?: string; category?: string; range?: string }>;
 }) {
   const params = await searchParams;
   const categoryParam = params.category;
+  const effectiveRange = normalizeRange(params.range);
   const pageParam = Number(params.page ?? "1");
   const page = Number.isFinite(pageParam) ? Math.max(1, pageParam) : 1;
+  const rangeStart = buildRangeDate(effectiveRange);
 
-  const where =
+  const where: {
+    category?: Category;
+    fetchedAt?: { gte: Date };
+  } =
     categoryParam && Object.values(Category).includes(categoryParam as Category)
       ? { category: categoryParam as Category }
       : {};
+  if (rangeStart) {
+    where.fetchedAt = { gte: rangeStart };
+  }
 
-  const [top, total, brief] = await Promise.all([
+  const countWhere = rangeStart ? { fetchedAt: { gte: rangeStart } } : {};
+  const [top, total, brief, groupedCounts] = await Promise.all([
     prisma.article.findMany({
       include: { source: true },
       orderBy: [{ score: "desc" }, { fetchedAt: "desc" }],
@@ -63,7 +109,14 @@ export default async function Home({
     }),
     prisma.article.count({ where }),
     buildDailyBrief(),
+    prisma.article.groupBy({
+      by: ["category"],
+      _count: { category: true },
+      where: countWhere,
+    }),
   ]);
+  const categoryCountMap = new Map(groupedCounts.map((item) => [item.category, item._count.category]));
+  const allCount = groupedCounts.reduce((sum, item) => sum + item._count.category, 0);
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
   const latest = await prisma.article.findMany({
@@ -114,15 +167,15 @@ export default async function Home({
       <section>
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-xl font-semibold">最新新闻</h2>
-          <div className="flex flex-wrap gap-2">
-            {categoryOptions.map((option) => {
-              const active = (option.value === "ALL" && !categoryParam) || option.value === categoryParam;
+          <div className="flex gap-2">
+            {rangeOptions.map((option) => {
+              const active = effectiveRange === option.value;
               return (
                 <Link
                   key={option.value}
-                  href={buildCategoryHref(option.value)}
+                  href={buildRangeHref(option.value, categoryParam)}
                   className={`rounded-full border px-3 py-1 text-xs ${
-                    active ? "border-zinc-900 bg-zinc-900 text-white" : "border-zinc-300 text-zinc-700 hover:bg-zinc-100"
+                    active ? "border-blue-600 bg-blue-600 text-white" : "border-zinc-300 text-zinc-700 hover:bg-zinc-100"
                   }`}
                 >
                   {option.label}
@@ -130,6 +183,23 @@ export default async function Home({
               );
             })}
           </div>
+        </div>
+        <div className="mb-4 flex flex-wrap gap-2">
+          {categoryOptions.map((option) => {
+            const active = (option.value === "ALL" && !categoryParam) || option.value === categoryParam;
+            const count = option.value === "ALL" ? allCount : (categoryCountMap.get(option.value) ?? 0);
+            return (
+              <Link
+                key={option.value}
+                href={buildCategoryHref(option.value, effectiveRange)}
+                className={`rounded-full border px-3 py-1 text-xs ${
+                  active ? "border-zinc-900 bg-zinc-900 text-white" : "border-zinc-300 text-zinc-700 hover:bg-zinc-100"
+                }`}
+              >
+                {option.label} ({count})
+              </Link>
+            );
+          })}
         </div>
         <div className="space-y-3">
           {latest.map((article) => (
@@ -154,13 +224,13 @@ export default async function Home({
           </p>
           <div className="flex gap-2">
             <Link
-              href={buildPageHref(Math.max(1, safePage - 1), categoryParam)}
+              href={buildPageHref(Math.max(1, safePage - 1), categoryParam, effectiveRange)}
               className={`rounded-lg border px-3 py-1 text-sm ${hasPrev ? "hover:bg-zinc-100" : "pointer-events-none opacity-40"}`}
             >
               上一页
             </Link>
             <Link
-              href={buildPageHref(safePage + 1, categoryParam)}
+              href={buildPageHref(safePage + 1, categoryParam, effectiveRange)}
               className={`rounded-lg border px-3 py-1 text-sm ${hasNext ? "hover:bg-zinc-100" : "pointer-events-none opacity-40"}`}
             >
               下一页

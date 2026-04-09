@@ -2,16 +2,40 @@ import { NextRequest, NextResponse } from "next/server";
 import { Category } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
+type RangeKey = "24h" | "7d" | "30d";
+
+function buildRangeDate(range: string | null): Date | null {
+  if (!range) return null;
+  const now = Date.now();
+  const hour = 60 * 60 * 1000;
+  const map: Record<RangeKey, number> = {
+    "24h": 24 * hour,
+    "7d": 7 * 24 * hour,
+    "30d": 30 * 24 * hour,
+  };
+
+  if (!(range in map)) return null;
+  return new Date(now - map[range as RangeKey]);
+}
+
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const categoryParam = searchParams.get("category");
+  const rangeParam = searchParams.get("range");
   const page = Math.max(1, Number(searchParams.get("page") ?? "1"));
   const pageSize = Math.min(50, Math.max(1, Number(searchParams.get("pageSize") ?? "12")));
+  const rangeStart = buildRangeDate(rangeParam);
 
-  const where =
+  const where: {
+    category?: Category;
+    fetchedAt?: { gte: Date };
+  } =
     categoryParam && Object.values(Category).includes(categoryParam as Category)
       ? { category: categoryParam as Category }
       : {};
+  if (rangeStart) {
+    where.fetchedAt = { gte: rangeStart };
+  }
 
   const total = await prisma.article.count({ where });
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
@@ -32,6 +56,7 @@ export async function GET(request: NextRequest) {
       pageSize,
       total,
       totalPages,
+      range: rangeParam,
     },
   });
 }

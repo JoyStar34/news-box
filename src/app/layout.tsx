@@ -13,8 +13,29 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "News Box",
-  description: "Global science and technology news aggregator with AI summaries.",
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"),
+  title: {
+    default: "News Box",
+    template: "%s | News Box",
+  },
+  description: "聚合全球科技、AI、自然科学与天文学新闻，提供中文 AI 摘要与每日重点。",
+  keywords: ["AI新闻", "科技新闻", "科学新闻", "天文新闻", "arXiv", "OpenRouter", "News Box"],
+  alternates: {
+    canonical: "/",
+  },
+  openGraph: {
+    type: "website",
+    url: "/",
+    title: "News Box",
+    description: "每天快速浏览最重要的科技与科学突破。",
+    siteName: "News Box",
+    locale: "zh_CN",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "News Box",
+    description: "全球科技与科学新闻聚合，AI 自动摘要。",
+  },
 };
 
 export default function RootLayout({
