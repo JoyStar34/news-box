@@ -30,11 +30,20 @@ export const metadata: Metadata = {
     description: "每天快速浏览最重要的科技与科学突破。",
     siteName: "News Box",
     locale: "zh_CN",
+    images: [
+      {
+        url: "/opengraph-image",
+        width: 1200,
+        height: 630,
+        alt: "News Box",
+      },
+    ],
   },
   twitter: {
     card: "summary_large_image",
     title: "News Box",
     description: "全球科技与科学新闻聚合，AI 自动摘要。",
+    images: ["/opengraph-image"],
   },
 };
 

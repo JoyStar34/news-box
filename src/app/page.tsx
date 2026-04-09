@@ -7,6 +7,7 @@ export const dynamic = "force-dynamic";
 
 const PAGE_SIZE = 12;
 type RangeKey = "24h" | "7d" | "30d";
+type SortKey = "latest" | "top";
 
 const categoryOptions: Array<{ label: string; value: "ALL" | Category }> = [
   { label: "全部", value: "ALL" },
@@ -21,6 +22,11 @@ const rangeOptions: Array<{ label: string; value: RangeKey }> = [
   { label: "24h", value: "24h" },
   { label: "7d", value: "7d" },
   { label: "30d", value: "30d" },
+];
+
+const sortOptions: Array<{ label: string; value: SortKey }> = [
+  { label: "最新", value: "latest" },
+  { label: "最重要", value: "top" },
 ];
 
 function buildRangeDate(range: string | undefined): Date | null {
@@ -41,6 +47,10 @@ function normalizeRange(range: string | undefined): RangeKey {
   return "24h";
 }
 
+function normalizeSort(sort: string | undefined): SortKey {
+  return sort === "top" ? "top" : "latest";
+}
+
 function formatDate(date: Date | null): string {
   if (!date) return "未知时间";
   return new Intl.DateTimeFormat("zh-CN", {
@@ -52,56 +62,119 @@ function formatDate(date: Date | null): string {
   }).format(date);
 }
 
-function buildPageHref(page: number, category: string | undefined, range: string | undefined) {
+function buildPageHref(
+  page: number,
+  category: string | undefined,
+  range: string | undefined,
+  sort: string | undefined,
+  sourceId: string | undefined,
+) {
   const params = new URLSearchParams();
   if (page > 1) params.set("page", String(page));
   if (category) params.set("category", category);
   if (range) params.set("range", range);
+  if (sort) params.set("sort", sort);
+  if (sourceId) params.set("source", sourceId);
   const query = params.toString();
   return query ? `/?${query}` : "/";
 }
 
-function buildCategoryHref(category: string, range: string | undefined) {
+function buildCategoryHref(
+  category: string,
+  range: string | undefined,
+  sort: string | undefined,
+  sourceId: string | undefined,
+) {
   const params = new URLSearchParams();
   if (category !== "ALL") params.set("category", category);
   if (range) params.set("range", range);
+  if (sort) params.set("sort", sort);
+  if (sourceId) params.set("source", sourceId);
   const query = params.toString();
   return query ? `/?${query}` : "/";
 }
 
-function buildRangeHref(range: string, category: string | undefined) {
+function buildRangeHref(range: string, category: string | undefined, sort: string | undefined, sourceId: string | undefined) {
   const params = new URLSearchParams();
   params.set("range", range);
   if (category) params.set("category", category);
+  if (sort) params.set("sort", sort);
+  if (sourceId) params.set("source", sourceId);
   const query = params.toString();
   return `/?${query}`;
+}
+
+function buildSortHref(sort: string, category: string | undefined, range: string | undefined, sourceId: string | undefined) {
+  const params = new URLSearchParams();
+  params.set("sort", sort);
+  if (category) params.set("category", category);
+  if (range) params.set("range", range);
+  if (sourceId) params.set("source", sourceId);
+  const query = params.toString();
+  return `/?${query}`;
+}
+
+function buildSourceHref(
+  sourceId: string,
+  category: string | undefined,
+  range: string | undefined,
+  sort: string | undefined,
+) {
+  const params = new URLSearchParams();
+  if (sourceId !== "ALL") params.set("source", sourceId);
+  if (category) params.set("category", category);
+  if (range) params.set("range", range);
+  if (sort) params.set("sort", sort);
+  const query = params.toString();
+  return query ? `/?${query}` : "/";
 }
 
 export default async function Home({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string; category?: string; range?: string }>;
+  searchParams: Promise<{ page?: string; category?: string; range?: string; sort?: string; source?: string }>;
 }) {
   const params = await searchParams;
   const categoryParam = params.category;
+  const sourceParam = params.source;
   const effectiveRange = normalizeRange(params.range);
+  const effectiveSort = normalizeSort(params.sort);
   const pageParam = Number(params.page ?? "1");
   const page = Number.isFinite(pageParam) ? Math.max(1, pageParam) : 1;
   const rangeStart = buildRangeDate(effectiveRange);
 
   const where: {
     category?: Category;
+    sourceId?: string;
     fetchedAt?: { gte: Date };
   } =
     categoryParam && Object.values(Category).includes(categoryParam as Category)
       ? { category: categoryParam as Category }
       : {};
+  if (sourceParam) {
+    where.sourceId = sourceParam;
+  }
   if (rangeStart) {
     where.fetchedAt = { gte: rangeStart };
   }
 
-  const countWhere = rangeStart ? { fetchedAt: { gte: rangeStart } } : {};
-  const [top, total, brief, groupedCounts] = await Promise.all([
+  const countWhere: {
+    fetchedAt?: { gte: Date };
+    sourceId?: string;
+  } = {};
+  if (rangeStart) countWhere.fetchedAt = { gte: rangeStart };
+  if (sourceParam) countWhere.sourceId = sourceParam;
+
+  const sourceCountWhere: {
+    fetchedAt?: { gte: Date };
+    category?: Category;
+  } = {};
+  if (rangeStart) sourceCountWhere.fetchedAt = { gte: rangeStart };
+  if (categoryParam && Object.values(Category).includes(categoryParam as Category)) {
+    sourceCountWhere.category = categoryParam as Category;
+  }
+
+  const [top, total, brief, groupedCounts, sourceGrouped] = await Promise.all([
     prisma.article.findMany({
       include: { source: true },
       orderBy: [{ score: "desc" }, { fetchedAt: "desc" }],
@@ -114,7 +187,31 @@ export default async function Home({
       _count: { category: true },
       where: countWhere,
     }),
+    prisma.article.groupBy({
+      by: ["sourceId"],
+      _count: { sourceId: true },
+      where: sourceCountWhere,
+      orderBy: { _count: { sourceId: "desc" } },
+      take: 12,
+    }),
   ]);
+
+  const sourceIds = sourceGrouped.map((item) => item.sourceId);
+  const sourceRecords = sourceIds.length
+    ? await prisma.source.findMany({
+        where: { id: { in: sourceIds } },
+      })
+    : [];
+  const sourceNameMap = new Map(sourceRecords.map((source) => [source.id, source.name]));
+  const sourceOptions = [
+    { id: "ALL", name: "全部来源", count: sourceGrouped.reduce((sum, item) => sum + item._count.sourceId, 0) },
+    ...sourceGrouped.map((item) => ({
+      id: item.sourceId,
+      name: sourceNameMap.get(item.sourceId) ?? "Unknown",
+      count: item._count.sourceId,
+    })),
+  ];
+
   const categoryCountMap = new Map(groupedCounts.map((item) => [item.category, item._count.category]));
   const allCount = groupedCounts.reduce((sum, item) => sum + item._count.category, 0);
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -122,7 +219,7 @@ export default async function Home({
   const latest = await prisma.article.findMany({
     where,
     include: { source: true },
-    orderBy: { fetchedAt: "desc" },
+    orderBy: effectiveSort === "latest" ? { fetchedAt: "desc" } : [{ score: "desc" }, { fetchedAt: "desc" }],
     skip: (safePage - 1) * PAGE_SIZE,
     take: PAGE_SIZE,
   });
@@ -167,13 +264,27 @@ export default async function Home({
       <section>
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-xl font-semibold">最新新闻</h2>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
+            {sortOptions.map((option) => {
+              const active = effectiveSort === option.value;
+              return (
+                <Link
+                  key={option.value}
+                  href={buildSortHref(option.value, categoryParam, effectiveRange, sourceParam)}
+                  className={`rounded-full border px-3 py-1 text-xs ${
+                    active ? "border-zinc-900 bg-zinc-900 text-white" : "border-zinc-300 text-zinc-700 hover:bg-zinc-100"
+                  }`}
+                >
+                  排序：{option.label}
+                </Link>
+              );
+            })}
             {rangeOptions.map((option) => {
               const active = effectiveRange === option.value;
               return (
                 <Link
                   key={option.value}
-                  href={buildRangeHref(option.value, categoryParam)}
+                  href={buildRangeHref(option.value, categoryParam, effectiveSort, sourceParam)}
                   className={`rounded-full border px-3 py-1 text-xs ${
                     active ? "border-blue-600 bg-blue-600 text-white" : "border-zinc-300 text-zinc-700 hover:bg-zinc-100"
                   }`}
@@ -191,12 +302,29 @@ export default async function Home({
             return (
               <Link
                 key={option.value}
-                href={buildCategoryHref(option.value, effectiveRange)}
+                href={buildCategoryHref(option.value, effectiveRange, effectiveSort, sourceParam)}
                 className={`rounded-full border px-3 py-1 text-xs ${
                   active ? "border-zinc-900 bg-zinc-900 text-white" : "border-zinc-300 text-zinc-700 hover:bg-zinc-100"
                 }`}
               >
                 {option.label} ({count})
+              </Link>
+            );
+          })}
+        </div>
+
+        <div className="mb-4 flex flex-wrap gap-2">
+          {sourceOptions.map((option) => {
+            const active = (option.id === "ALL" && !sourceParam) || option.id === sourceParam;
+            return (
+              <Link
+                key={option.id}
+                href={buildSourceHref(option.id, categoryParam, effectiveRange, effectiveSort)}
+                className={`rounded-full border px-3 py-1 text-xs ${
+                  active ? "border-emerald-700 bg-emerald-700 text-white" : "border-zinc-300 text-zinc-700 hover:bg-zinc-100"
+                }`}
+              >
+                {option.name} ({option.count})
               </Link>
             );
           })}
@@ -224,13 +352,13 @@ export default async function Home({
           </p>
           <div className="flex gap-2">
             <Link
-              href={buildPageHref(Math.max(1, safePage - 1), categoryParam, effectiveRange)}
+              href={buildPageHref(Math.max(1, safePage - 1), categoryParam, effectiveRange, effectiveSort, sourceParam)}
               className={`rounded-lg border px-3 py-1 text-sm ${hasPrev ? "hover:bg-zinc-100" : "pointer-events-none opacity-40"}`}
             >
               上一页
             </Link>
             <Link
-              href={buildPageHref(safePage + 1, categoryParam, effectiveRange)}
+              href={buildPageHref(safePage + 1, categoryParam, effectiveRange, effectiveSort, sourceParam)}
               className={`rounded-lg border px-3 py-1 text-sm ${hasNext ? "hover:bg-zinc-100" : "pointer-events-none opacity-40"}`}
             >
               下一页

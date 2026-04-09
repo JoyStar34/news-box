@@ -52,14 +52,22 @@ Both endpoints require:
 
 ## Public APIs
 
-- `GET /api/articles?category=&page=&pageSize=`
+- `GET /api/articles?category=&range=&sort=&source=&page=&pageSize=`
 - `GET /api/top`
 - `GET /api/daily-brief`
+- `GET /sitemap.xml`
+- `GET /robots.txt`
 
 `GET /api/articles` response includes:
 
 - `data`: article list
 - `pagination`: `{ page, pageSize, total, totalPages }`
+
+Supported query values:
+
+- `range`: `24h | 7d | 30d`
+- `sort`: `latest | top`
+- `source`: source id from database
 
 ## Railway Cron Checklist
 

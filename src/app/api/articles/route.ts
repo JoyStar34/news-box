@@ -3,6 +3,7 @@ import { Category } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
 type RangeKey = "24h" | "7d" | "30d";
+type SortKey = "latest" | "top";
 
 function buildRangeDate(range: string | null): Date | null {
   if (!range) return null;
@@ -21,18 +22,24 @@ function buildRangeDate(range: string | null): Date | null {
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const categoryParam = searchParams.get("category");
+  const sourceParam = searchParams.get("source");
   const rangeParam = searchParams.get("range");
+  const sortParam = (searchParams.get("sort") ?? "latest") as SortKey;
   const page = Math.max(1, Number(searchParams.get("page") ?? "1"));
   const pageSize = Math.min(50, Math.max(1, Number(searchParams.get("pageSize") ?? "12")));
   const rangeStart = buildRangeDate(rangeParam);
 
   const where: {
     category?: Category;
+    sourceId?: string;
     fetchedAt?: { gte: Date };
   } =
     categoryParam && Object.values(Category).includes(categoryParam as Category)
       ? { category: categoryParam as Category }
       : {};
+  if (sourceParam) {
+    where.sourceId = sourceParam;
+  }
   if (rangeStart) {
     where.fetchedAt = { gte: rangeStart };
   }
@@ -44,7 +51,7 @@ export async function GET(request: NextRequest) {
   const articles = await prisma.article.findMany({
     where,
     include: { source: true },
-    orderBy: [{ fetchedAt: "desc" }, { score: "desc" }],
+    orderBy: sortParam === "top" ? [{ score: "desc" }, { fetchedAt: "desc" }] : [{ fetchedAt: "desc" }, { score: "desc" }],
     skip: (safePage - 1) * pageSize,
     take: pageSize,
   });
@@ -57,6 +64,8 @@ export async function GET(request: NextRequest) {
       total,
       totalPages,
       range: rangeParam,
+      sort: sortParam,
+      source: sourceParam,
     },
   });
 }
