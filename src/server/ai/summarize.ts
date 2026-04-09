@@ -15,7 +15,7 @@ export async function summarizePendingArticles(maxItems = 30) {
     return { processed: 0, skipped: maxItems, reason: "OPENAI_API_KEY not configured" };
   }
 
-  const openai = new OpenAI({ apiKey: env.OPENAI_API_KEY });
+  const openai = new OpenAI({ apiKey: env.OPENAI_API_KEY, baseURL: env.OPENAI_BASE_URL });
 
   const pending = await prisma.article.findMany({
     where: { summaryAi: null },
@@ -42,11 +42,17 @@ export async function summarizePendingArticles(maxItems = 30) {
           `Summary: ${article.summaryRaw ?? "N/A"}`,
         ].join("\n");
 
-        const completion = await openai.responses.create({
-          model: env.OPENAI_MODEL,
-          temperature: 0.2,
-          input: prompt,
-        });
+        let completion;
+        try {
+          completion = await openai.responses.create({
+            model: env.OPENAI_MODEL,
+            temperature: 0.2,
+            input: prompt,
+          });
+        } catch (error) {
+          void error;
+          return;
+        }
 
         const text = completion.output_text ?? "";
         const jsonMatch = text.match(/\{[\s\S]*\}/);

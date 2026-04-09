@@ -56,3 +56,39 @@ Both endpoints require:
 - `GET /api/top`
 - `GET /api/daily-brief`
 
+`GET /api/articles` response includes:
+
+- `data`: article list
+- `pagination`: `{ page, pageSize, total, totalPages }`
+
+## Railway Cron Checklist
+
+Use two cron jobs (staggered) to avoid long single-request chains:
+
+1. `POST /api/internal/fetch` every 6 hours
+2. `POST /api/internal/summarize` every 6 hours, offset by 10-15 minutes
+
+### Steps
+
+1. Deploy app service + PostgreSQL on Railway.
+2. Set env vars:
+   - `DATABASE_URL`
+   - `OPENAI_API_KEY`
+   - `OPENAI_BASE_URL` (for OpenRouter: `https://openrouter.ai/api/v1`)
+   - `OPENAI_MODEL`
+   - `CRON_SECRET`
+3. In Railway Scheduler, add two HTTP jobs:
+   - URL: `https://<your-domain>/api/internal/fetch`
+   - URL: `https://<your-domain>/api/internal/summarize`
+4. Add request header to both jobs:
+   - `Authorization: Bearer <CRON_SECRET>`
+5. Verify logs after first run:
+   - fetch job should report inserted/failed/source count
+   - summarize job should report processed/skipped count
+
+### Suggested Initial Schedule
+
+- Fetch: every 6h (`0 */6 * * *`)
+- Summarize: every 6h + 15m (`15 */6 * * *`)
+
+

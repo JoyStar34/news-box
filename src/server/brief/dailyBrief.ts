@@ -26,16 +26,26 @@ export async function buildDailyBrief() {
     };
   }
 
-  const openai = new OpenAI({ apiKey: env.OPENAI_API_KEY });
+  const openai = new OpenAI({ apiKey: env.OPENAI_API_KEY, baseURL: env.OPENAI_BASE_URL });
   const listText = top
     .map((item, idx) => `${idx + 1}. ${item.title} (${item.source.name})`)
     .join("\n");
 
-  const completion = await openai.responses.create({
-    model: env.OPENAI_MODEL,
-    temperature: 0.2,
-    input: `Summarize these 3 scientific breakthroughs into a short daily brief (3 sentences, Chinese).\n${listText}`,
-  });
+  let completion;
+  try {
+    completion = await openai.responses.create({
+      model: env.OPENAI_MODEL,
+      temperature: 0.2,
+      input: `Summarize these 3 scientific breakthroughs into a short daily brief (3 sentences, Chinese).\n${listText}`,
+    });
+  } catch (error) {
+    void error;
+    return {
+      title: "Today in Science",
+      text: listText,
+      items: top,
+    };
+  }
 
   return {
     title: "Today in Science",
