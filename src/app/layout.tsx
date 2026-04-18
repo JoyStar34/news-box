@@ -1,6 +1,11 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import Script from "next/script";
 import "./globals.css";
+
+const enablePlausible =
+  process.env.NODE_ENV === "production" ||
+  process.env.NEXT_PUBLIC_ENABLE_PLAUSIBLE === "true";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -57,6 +62,18 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
+      <head>
+        {enablePlausible ? (
+          <>
+            <Script
+              defer
+              data-domain="news-box-production.up.railway.app"
+              src="https://plausible.io/js/script.js"
+              strategy="afterInteractive"
+            />
+          </>
+        ) : null}
+      </head>
       <body className="min-h-full flex flex-col">{children}</body>
     </html>
   );
