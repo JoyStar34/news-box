@@ -23,7 +23,7 @@ export async function syncSources() {
   }
 }
 
-export async function fetchFeeds() {
+export async function fetchFeeds(traceId?: string) {
   await syncSources();
 
   const activeSources = await prisma.source.findMany({
@@ -75,7 +75,10 @@ export async function fetchFeeds() {
       }
     } catch (error) {
       failed += 1;
-      console.error(`Fetch failed: ${source.name}`, error);
+      console.error(
+        `[ERROR][FETCH]${traceId ? ` traceId=${traceId}` : ""} source=${source.name}`,
+        error instanceof Error ? error.message : error,
+      );
     }
   }
 

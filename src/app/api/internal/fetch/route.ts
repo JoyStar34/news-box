@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { isCronAuthorized } from "@/lib/internalAuth";
 import { fetchFeeds } from "@/server/rss/fetchFeeds";
@@ -7,7 +8,15 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const result = await fetchFeeds();
-  return NextResponse.json({ ok: true, result });
+  const traceId = randomUUID();
+  const start = Date.now();
+  console.log(`[PIPELINE][FETCH][${traceId}] job started`);
+
+  const result = await fetchFeeds(traceId);
+
+  console.log(
+    `[PIPELINE][FETCH][${traceId}] inserted=${result.inserted} failed=${result.failed} sources=${result.sources} duration=${Date.now() - start}ms`,
+  );
+  return NextResponse.json({ ok: true, result, traceId });
 }
 

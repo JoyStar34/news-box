@@ -93,6 +93,7 @@ function parseImportance(text: string): number | null {
 export async function scorePendingArticles(maxItems: number = BATCH_LIMIT) {
   const env = getEnv();
   if (!env.OPENAI_API_KEY) {
+    console.log(`[SCORE] OPENAI_API_KEY not configured`);
     return { processed: 0, skipped: 0, reason: "OPENAI_API_KEY not configured" as const };
   }
 
@@ -107,9 +108,8 @@ export async function scorePendingArticles(maxItems: number = BATCH_LIMIT) {
   });
 
   const limit = pLimit(CONCURRENCY);
-  let processed = 0;
 
-  await Promise.all(
+  const outcomes = await Promise.all(
     pending.map((article) =>
       limit(async () => {
         try {
@@ -131,8 +131,7 @@ export async function scorePendingArticles(maxItems: number = BATCH_LIMIT) {
                 score: 0,
               },
             });
-            processed += 1;
-            return;
+            return "irrelevant" as const;
           }
 
           if (!relevant) {
@@ -146,8 +145,7 @@ export async function scorePendingArticles(maxItems: number = BATCH_LIMIT) {
                 score: 0,
               },
             });
-            processed += 1;
-            return;
+            return "irrelevant" as const;
           }
 
           const impText = await callText(
@@ -166,8 +164,7 @@ export async function scorePendingArticles(maxItems: number = BATCH_LIMIT) {
                 finalScore: null,
               },
             });
-            processed += 1;
-            return;
+            return "relevant_no_final" as const;
           }
 
           const ref = article.publishedAt ?? article.fetchedAt;
@@ -185,13 +182,24 @@ export async function scorePendingArticles(maxItems: number = BATCH_LIMIT) {
               score: final,
             },
           });
-          processed += 1;
-        } catch {
+          return "scored" as const;
+        } catch (err) {
+          console.error(`[ERROR][SCORE]`, err);
           // Skip batch item on LLM/network failure; next cron retries null rows
+          return "error" as const;
         }
       }),
     ),
   );
+
+  const irrelevant = outcomes.filter((o) => o === "irrelevant").length;
+  const relevantNoFinal = outcomes.filter((o) => o === "relevant_no_final").length;
+  const scored = outcomes.filter((o) => o === "scored").length;
+  const processed = outcomes.filter((o) => o !== "error").length;
+
+  console.log(`[SCORE] evaluating articles=${pending.length}`);
+  console.log(`[SCORE] relevant=${relevantNoFinal + scored} irrelevant=${irrelevant}`);
+  console.log(`[SCORE] scored=${scored}`);
 
   return { processed, skipped: pending.length - processed };
 }

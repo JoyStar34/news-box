@@ -12,6 +12,7 @@ const resultSchema = z.object({
 export async function summarizePendingArticles(maxItems = 30) {
   const env = getEnv();
   if (!env.OPENAI_API_KEY) {
+    console.log(`[SUMMARIZE] OPENAI_API_KEY not configured`);
     return { processed: 0, skipped: maxItems, reason: "OPENAI_API_KEY not configured" };
   }
 
@@ -28,10 +29,11 @@ export async function summarizePendingArticles(maxItems = 30) {
     take: maxItems,
   });
 
-  const limit = pLimit(3);
-  let processed = 0;
+  console.log(`[SUMMARIZE] queued=${pending.length}`);
 
-  await Promise.all(
+  const limit = pLimit(3);
+
+  const outcomes = await Promise.all(
     pending.map((article) =>
       limit(async () => {
         const prompt = [
@@ -54,16 +56,21 @@ export async function summarizePendingArticles(maxItems = 30) {
             input: prompt,
           });
         } catch (error) {
-          void error;
-          return;
+          console.error(`[ERROR][SUMMARIZE]`, error);
+          return "fail" as const;
         }
 
         const text = completion.output_text ?? "";
         const jsonMatch = text.match(/\{[\s\S]*\}/);
-        if (!jsonMatch) return;
+        if (!jsonMatch) return "fail" as const;
 
-        const parsed = resultSchema.safeParse(JSON.parse(jsonMatch[0]));
-        if (!parsed.success) return;
+        let parsed;
+        try {
+          parsed = resultSchema.safeParse(JSON.parse(jsonMatch[0]));
+        } catch {
+          return "fail" as const;
+        }
+        if (!parsed.success) return "fail" as const;
 
         await prisma.article.update({
           where: { id: article.id },
@@ -73,11 +80,15 @@ export async function summarizePendingArticles(maxItems = 30) {
           },
         });
 
-        processed += 1;
+        return "success" as const;
       }),
     ),
   );
 
-  return { processed, skipped: pending.length - processed };
-}
+  const success = outcomes.filter((o) => o === "success").length;
+  const fail = outcomes.filter((o) => o === "fail").length;
 
+  console.log(`[SUMMARIZE] success=${success} fail=${fail}`);
+
+  return { processed: success, skipped: pending.length - success };
+}

@@ -40,6 +40,8 @@ export async function generateDailyTopNews(): Promise<{
     include: { source: true },
   });
 
+  console.log(`[DAILY_TOP] candidates=${candidates.length}`);
+
   if (candidates.length === 0) {
     return { ok: false, briefDate: day.toISOString(), articleIds: [], reason: "no_candidates" };
   }
@@ -90,10 +92,13 @@ ${list}`;
         const rest = fallbackTop3.filter((a) => !matched.some((m) => m.id === a.id));
         chosen = [...matched, ...rest].slice(0, 3);
       }
-    } catch {
+    } catch (err) {
+      console.error(`[ERROR][DAILY_TOP]`, err);
       chosen = fallbackTop3;
     }
   }
+
+  console.log(`[DAILY_TOP] selected=[${chosen.map((a) => a.id).join(",")}]`);
 
   let body = chosen.map((a, i) => `${i + 1}. ${a.title}`).join("\n");
   if (env.OPENAI_API_KEY) {
@@ -106,7 +111,8 @@ ${list}`;
         input: `Summarize these 3 scientific breakthroughs into a short daily brief (3 sentences, Chinese).\n${listText}`,
       });
       body = completion.output_text?.trim() || body;
-    } catch {
+    } catch (err) {
+      console.error(`[ERROR][DAILY_TOP]`, err);
       // keep body as title list
     }
   }
@@ -133,6 +139,8 @@ ${list}`;
       })),
     });
   });
+
+  console.log(`[DAILY_TOP] daily brief generated`);
 
   return {
     ok: true,

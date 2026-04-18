@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { isCronAuthorized } from "@/lib/internalAuth";
 import { scorePendingArticles } from "@/server/ai/rankingPipeline";
@@ -7,6 +8,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const traceId = randomUUID();
+  const start = Date.now();
+  console.log(`[PIPELINE][SCORE][${traceId}] job started`);
+
   const result = await scorePendingArticles(30);
-  return NextResponse.json({ ok: true, result });
+
+  console.log(
+    `[PIPELINE][SCORE][${traceId}] processed=${result.processed} skipped=${result.skipped} duration=${Date.now() - start}ms`,
+  );
+  return NextResponse.json({ ok: true, result, traceId });
 }
