@@ -1,12 +1,12 @@
 # News Box
 
-News Box is a single-service MVP that aggregates global tech/science/astronomy RSS feeds, stores them in PostgreSQL, and adds AI summaries.
+News Box is a single-service MVP that aggregates global tech/science/astronomy RSS feeds, stores them in PostgreSQL, and adds AI summaries plus **AI News 2.0** relevance scoring and daily Top 3.
 
 ## Stack
 
 - Next.js (App Router) + TypeScript
 - Prisma + PostgreSQL
-- OpenAI API (`gpt-4o-mini` by default)
+- OpenAI / OpenRouter (`gpt-4o-mini` by default)
 
 ## Setup
 
@@ -43,60 +43,39 @@ npm run dev
 
 ## Internal APIs
 
-- `POST /api/internal/fetch` - fetch RSS and upsert articles
-- `POST /api/internal/summarize` - summarize at most 30 pending articles
+All use: `Authorization: Bearer <CRON_SECRET>`
 
-Both endpoints require:
-
-`Authorization: Bearer <CRON_SECRET>`
+| Endpoint | Purpose |
+|----------|---------|
+| `POST /api/internal/fetch` | RSS ingest + legacy score on create |
+| `POST /api/internal/score` | AI relevance + importance + `finalScore` (batch) |
+| `POST /api/internal/summarize` | Summaries for `isRelevant !== false` |
+| `POST /api/internal/daily-top` | Daily Top 3 + `DailyBrief` + brief body |
 
 ## Public APIs
 
 - `GET /api/articles?category=&range=&sort=&source=&page=&pageSize=`
-- `GET /api/top`
+- `GET /api/top` — today’s persisted Top 3 (fallback to ranked articles if no daily row)
 - `GET /api/daily-brief`
 - `GET /sitemap.xml`
 - `GET /robots.txt`
 
-`GET /api/articles` response includes:
+`GET /api/articles` pagination: `page`, `pageSize`, `range`, `sort` (`latest` | `top`), `source`.
 
-- `data`: article list
-- `pagination`: `{ page, pageSize, total, totalPages }`
+## Railway Cron (recommended order)
 
-Supported query values:
+Stagger so score runs after fetch, summarize after score, daily brief once per day:
 
-- `range`: `24h | 7d | 30d`
-- `sort`: `latest | top`
-- `source`: source id from database
-
-## Railway Cron Checklist
-
-Use two cron jobs (staggered) to avoid long single-request chains:
-
-1. `POST /api/internal/fetch` every 6 hours
-2. `POST /api/internal/summarize` every 6 hours, offset by 10-15 minutes
+| Job | Cron example |
+|-----|----------------|
+| fetch | `0 */6 * * *` |
+| score | `10 */6 * * *` |
+| summarize | `20 */6 * * *` |
+| daily-top | `0 2 * * *` |
 
 ### Steps
 
-1. Deploy app service + PostgreSQL on Railway.
-2. Set env vars:
-   - `DATABASE_URL`
-   - `OPENAI_API_KEY`
-   - `OPENAI_BASE_URL` (for OpenRouter: `https://openrouter.ai/api/v1`)
-   - `OPENAI_MODEL`
-   - `CRON_SECRET`
-3. In Railway Scheduler, add two HTTP jobs:
-   - URL: `https://<your-domain>/api/internal/fetch`
-   - URL: `https://<your-domain>/api/internal/summarize`
-4. Add request header to both jobs:
-   - `Authorization: Bearer <CRON_SECRET>`
-5. Verify logs after first run:
-   - fetch job should report inserted/failed/source count
-   - summarize job should report processed/skipped count
-
-### Suggested Initial Schedule
-
-- Fetch: every 6h (`0 */6 * * *`)
-- Summarize: every 6h + 15m (`15 */6 * * *`)
-
-
+1. Deploy app + PostgreSQL on Railway.
+2. Set `DATABASE_URL`, `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_MODEL`, `CRON_SECRET`, `NEXT_PUBLIC_SITE_URL`.
+3. Add four HTTP cron jobs with the header above.
+4. Verify logs: fetch → score → summarize → daily-top.

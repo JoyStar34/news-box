@@ -1,15 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { isCronAuthorized } from "@/lib/internalAuth";
 import { fetchFeeds } from "@/server/rss/fetchFeeds";
 
-function authorized(request: NextRequest): boolean {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) return false;
-  const token = request.headers.get("authorization")?.replace("Bearer ", "");
-  return token === secret;
-}
-
 export async function POST(request: NextRequest) {
-  if (!authorized(request)) {
+  if (!isCronAuthorized(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

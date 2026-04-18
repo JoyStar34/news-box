@@ -51,7 +51,10 @@ export async function GET(request: NextRequest) {
   const articles = await prisma.article.findMany({
     where,
     include: { source: true },
-    orderBy: sortParam === "top" ? [{ score: "desc" }, { fetchedAt: "desc" }] : [{ fetchedAt: "desc" }, { score: "desc" }],
+    orderBy:
+      sortParam === "top"
+        ? [{ finalScore: { sort: "desc", nulls: "last" } }, { score: "desc" }, { fetchedAt: "desc" }]
+        : [{ fetchedAt: "desc" }, { score: "desc" }],
     skip: (safePage - 1) * pageSize,
     take: pageSize,
   });

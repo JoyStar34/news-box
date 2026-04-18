@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Category } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { buildDailyBrief } from "@/server/brief/dailyBrief";
+import { buildDailyBriefFromStore } from "@/server/brief/dailyBriefService";
 
 export const dynamic = "force-dynamic";
 
@@ -174,14 +174,9 @@ export default async function Home({
     sourceCountWhere.category = categoryParam as Category;
   }
 
-  const [top, total, brief, groupedCounts, sourceGrouped] = await Promise.all([
-    prisma.article.findMany({
-      include: { source: true },
-      orderBy: [{ score: "desc" }, { fetchedAt: "desc" }],
-      take: 3,
-    }),
+  const [briefData, total, groupedCounts, sourceGrouped] = await Promise.all([
+    buildDailyBriefFromStore(),
     prisma.article.count({ where }),
-    buildDailyBrief(),
     prisma.article.groupBy({
       by: ["category"],
       _count: { category: true },
@@ -195,6 +190,9 @@ export default async function Home({
       take: 12,
     }),
   ]);
+
+  const top = briefData.items;
+  const brief = { title: briefData.title, text: briefData.text };
 
   const sourceIds = sourceGrouped.map((item) => item.sourceId);
   const sourceRecords = sourceIds.length
@@ -219,7 +217,10 @@ export default async function Home({
   const latest = await prisma.article.findMany({
     where,
     include: { source: true },
-    orderBy: effectiveSort === "latest" ? { fetchedAt: "desc" } : [{ score: "desc" }, { fetchedAt: "desc" }],
+    orderBy:
+      effectiveSort === "latest"
+        ? { fetchedAt: "desc" }
+        : [{ finalScore: { sort: "desc", nulls: "last" } }, { score: "desc" }, { fetchedAt: "desc" }],
     skip: (safePage - 1) * PAGE_SIZE,
     take: PAGE_SIZE,
   });

@@ -17,8 +17,12 @@ export async function summarizePendingArticles(maxItems = 30) {
 
   const openai = new OpenAI({ apiKey: env.OPENAI_API_KEY, baseURL: env.OPENAI_BASE_URL });
 
+  // Exclude isRelevant === false only; null (legacy / not yet scored) still gets summaries
   const pending = await prisma.article.findMany({
-    where: { summaryAi: null },
+    where: {
+      summaryAi: null,
+      OR: [{ isRelevant: null }, { isRelevant: true }],
+    },
     include: { source: true },
     orderBy: { fetchedAt: "desc" },
     take: maxItems,

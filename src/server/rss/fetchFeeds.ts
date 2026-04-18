@@ -15,6 +15,7 @@ export async function syncSources() {
         name: source.name,
         category: source.category,
         priority: source.priority,
+        weight: source.weight,
         isActive: true,
       },
       create: source,

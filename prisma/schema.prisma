@@ -21,6 +21,8 @@ model Source {
   url              String    @unique
   category         Category
   priority         Int       @default(1)
+  /// AI News 2.0: 0–1 multiplier for final_score (Nature≈1.0, Verge≈0.6)
+  weight           Float     @default(0.7)
   isActive         Boolean   @default(true)
   fetchIntervalMin Int       @default(360)
   createdAt        DateTime  @default(now())
@@ -29,24 +31,55 @@ model Source {
 }
 
 model Article {
-  id           String    @id @default(cuid())
-  sourceId     String
-  source       Source    @relation(fields: [sourceId], references: [id], onDelete: Cascade)
-  title        String
-  summaryRaw   String?
-  summaryAi    String?
-  whyImportant String?
-  url          String    @unique
-  publishedAt  DateTime?
-  fetchedAt    DateTime  @default(now())
-  category     Category
-  score        Float     @default(0)
-  contentHash  String?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  id                String           @id @default(cuid())
+  sourceId          String
+  source            Source           @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  title             String
+  summaryRaw        String?
+  summaryAi         String?
+  whyImportant      String?
+  url               String           @unique
+  publishedAt       DateTime?
+  fetchedAt         DateTime         @default(now())
+  category          Category
+  /// Legacy heuristic score; keep for backward compatibility; mirror final_score when available
+  score             Float            @default(0)
+  contentHash       String?
+  relevanceScore    Int?
+  importanceScore   Int?
+  finalScore        Float?
+  topic             String?
+  /// null = not yet classified; true = relevant; false = filtered out
+  isRelevant        Boolean?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  dailyBriefItems   DailyBriefItem[]
 
   @@index([fetchedAt(sort: Desc)])
   @@index([category, fetchedAt(sort: Desc)])
   @@index([score(sort: Desc)])
+  @@index([finalScore(sort: Desc), fetchedAt(sort: Desc)])
+  @@index([isRelevant, fetchedAt(sort: Desc)])
 }
 
+/// One row per calendar day (UTC midnight) for stable “Today in Science”
+model DailyBrief {
+  id        String           @id @default(cuid())
+  briefDate DateTime         @unique
+  body      String
+  createdAt DateTime         @default(now())
+  items     DailyBriefItem[]
+}
+
+model DailyBriefItem {
+  id        String     @id @default(cuid())
+  briefId   String
+  brief     DailyBrief @relation(fields: [briefId], references: [id], onDelete: Cascade)
+  articleId String
+  article   Article    @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  /// 1 = top story, 2, 3, … (extensible for Top5 later)
+  position  Int
+
+  @@unique([briefId, position])
+  @@index([articleId])
+}
