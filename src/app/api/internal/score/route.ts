@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { isCronAuthorized } from "@/lib/internalAuth";
+import { recordLastScore } from "@/lib/pipelineMetrics";
 import { scorePendingArticles } from "@/server/ai/rankingPipeline";
 
 export async function POST(request: NextRequest) {
@@ -13,6 +14,7 @@ export async function POST(request: NextRequest) {
   console.log(`[PIPELINE][SCORE][${traceId}] job started`);
 
   const result = await scorePendingArticles(30);
+  recordLastScore(result.processed);
 
   console.log(
     `[PIPELINE][SCORE][${traceId}] processed=${result.processed} skipped=${result.skipped} duration=${Date.now() - start}ms`,

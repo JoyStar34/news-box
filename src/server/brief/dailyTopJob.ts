@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import { prisma } from "@/lib/prisma";
+import { logOpenAiLatency, logOpenAiUsage } from "@/lib/openaiObservability";
 import { getEnv } from "@/server/config/env";
 import type { Article, Source } from "@prisma/client";
 
@@ -60,11 +61,14 @@ Return exactly 3 lines. Each line must be ONLY the article title, copied verbati
 ${list}`;
 
     try {
+      const startPick = Date.now();
       const completion = await openai.responses.create({
         model: env.OPENAI_MODEL,
         temperature: 0.2,
         input: pickPrompt,
       });
+      logOpenAiLatency("[DAILY_TOP]", startPick);
+      logOpenAiUsage(completion);
       const raw = (completion.output_text ?? "").trim();
       const lines = raw
         .split("\n")
@@ -105,11 +109,14 @@ ${list}`;
     const openai = new OpenAI({ apiKey: env.OPENAI_API_KEY, baseURL: env.OPENAI_BASE_URL });
     const listText = chosen.map((a, i) => `${i + 1}. ${a.title} (${a.source.name})`).join("\n");
     try {
+      const startBrief = Date.now();
       const completion = await openai.responses.create({
         model: env.OPENAI_MODEL,
         temperature: 0.2,
         input: `Summarize these 3 scientific breakthroughs into a short daily brief (3 sentences, Chinese).\n${listText}`,
       });
+      logOpenAiLatency("[DAILY_TOP]", startBrief);
+      logOpenAiUsage(completion);
       body = completion.output_text?.trim() || body;
     } catch (err) {
       console.error(`[ERROR][DAILY_TOP]`, err);

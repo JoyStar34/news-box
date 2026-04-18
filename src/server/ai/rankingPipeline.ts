@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 import pLimit from "p-limit";
 import { prisma } from "@/lib/prisma";
+import { logOpenAiLatency, logOpenAiUsage } from "@/lib/openaiObservability";
 import { getEnv } from "@/server/config/env";
 import { computeFinalScore, computeFreshnessScore } from "@/server/scoring/freshness";
 
@@ -62,11 +63,14 @@ Return only a single integer from 0 to 100, nothing else.`;
 }
 
 async function callText(openai: OpenAI, model: string, input: string): Promise<string> {
+  const start = Date.now();
   const completion = await openai.responses.create({
     model,
     temperature: 0.1,
     input,
   });
+  logOpenAiLatency("[SCORE]", start);
+  logOpenAiUsage(completion);
   return (completion.output_text ?? "").trim();
 }
 
@@ -109,6 +113,12 @@ export async function scorePendingArticles(maxItems: number = BATCH_LIMIT) {
 
   const limit = pLimit(CONCURRENCY);
 
+  type ScoreOutcome =
+    | { kind: "irrelevant" }
+    | { kind: "relevant_no_final" }
+    | { kind: "scored"; importance: number; finalScore: number }
+    | { kind: "error" };
+
   const outcomes = await Promise.all(
     pending.map((article) =>
       limit(async () => {
@@ -131,7 +141,7 @@ export async function scorePendingArticles(maxItems: number = BATCH_LIMIT) {
                 score: 0,
               },
             });
-            return "irrelevant" as const;
+            return { kind: "irrelevant" } satisfies ScoreOutcome;
           }
 
           if (!relevant) {
@@ -145,7 +155,7 @@ export async function scorePendingArticles(maxItems: number = BATCH_LIMIT) {
                 score: 0,
               },
             });
-            return "irrelevant" as const;
+            return { kind: "irrelevant" } satisfies ScoreOutcome;
           }
 
           const impText = await callText(
@@ -164,7 +174,7 @@ export async function scorePendingArticles(maxItems: number = BATCH_LIMIT) {
                 finalScore: null,
               },
             });
-            return "relevant_no_final" as const;
+            return { kind: "relevant_no_final" } satisfies ScoreOutcome;
           }
 
           const ref = article.publishedAt ?? article.fetchedAt;
@@ -182,24 +192,34 @@ export async function scorePendingArticles(maxItems: number = BATCH_LIMIT) {
               score: final,
             },
           });
-          return "scored" as const;
+          return { kind: "scored", importance, finalScore: final } satisfies ScoreOutcome;
         } catch (err) {
           console.error(`[ERROR][SCORE]`, err);
           // Skip batch item on LLM/network failure; next cron retries null rows
-          return "error" as const;
+          return { kind: "error" } satisfies ScoreOutcome;
         }
       }),
     ),
   );
 
-  const irrelevant = outcomes.filter((o) => o === "irrelevant").length;
-  const relevantNoFinal = outcomes.filter((o) => o === "relevant_no_final").length;
-  const scored = outcomes.filter((o) => o === "scored").length;
-  const processed = outcomes.filter((o) => o !== "error").length;
+  const irrelevant = outcomes.filter((o) => o.kind === "irrelevant").length;
+  const relevantNoFinal = outcomes.filter((o) => o.kind === "relevant_no_final").length;
+  const scored = outcomes.filter((o) => o.kind === "scored").length;
+  const processed = outcomes.filter((o) => o.kind !== "error").length;
 
   console.log(`[SCORE] evaluating articles=${pending.length}`);
   console.log(`[SCORE] relevant=${relevantNoFinal + scored} irrelevant=${irrelevant}`);
   console.log(`[SCORE] scored=${scored}`);
+
+  const scoredRows = outcomes.filter((o): o is Extract<ScoreOutcome, { kind: "scored" }> => o.kind === "scored");
+  if (scoredRows.length > 0) {
+    const importanceAvg =
+      scoredRows.reduce((sum, o) => sum + o.importance, 0) / scoredRows.length;
+    const finalScoreMax = Math.max(...scoredRows.map((o) => o.finalScore));
+    console.log("[SCORE]", "importance_avg=", importanceAvg, "finalScore_max=", finalScoreMax);
+  } else {
+    console.log("[SCORE]", "importance_avg=", "n/a", "finalScore_max=", "n/a");
+  }
 
   return { processed, skipped: pending.length - processed };
 }

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { isCronAuthorized } from "@/lib/internalAuth";
+import { recordDailyTop } from "@/lib/pipelineMetrics";
 import { generateDailyTopNews } from "@/server/brief/dailyTopJob";
 
 export async function POST(request: NextRequest) {
@@ -13,6 +14,7 @@ export async function POST(request: NextRequest) {
   console.log(`[PIPELINE][DAILY_TOP][${traceId}] job started`);
 
   const result = await generateDailyTopNews();
+  recordDailyTop(result.ok);
 
   console.log(
     `[PIPELINE][DAILY_TOP][${traceId}] ok=${result.ok} articleIds=${result.articleIds.length} duration=${Date.now() - start}ms`,

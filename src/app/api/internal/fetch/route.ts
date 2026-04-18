@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { isCronAuthorized } from "@/lib/internalAuth";
+import { recordLastFetch } from "@/lib/pipelineMetrics";
 import { fetchFeeds } from "@/server/rss/fetchFeeds";
 
 export async function POST(request: NextRequest) {
@@ -13,6 +14,7 @@ export async function POST(request: NextRequest) {
   console.log(`[PIPELINE][FETCH][${traceId}] job started`);
 
   const result = await fetchFeeds(traceId);
+  recordLastFetch(result.inserted);
 
   console.log(
     `[PIPELINE][FETCH][${traceId}] inserted=${result.inserted} failed=${result.failed} sources=${result.sources} duration=${Date.now() - start}ms`,

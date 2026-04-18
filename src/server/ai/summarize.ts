@@ -2,6 +2,7 @@ import OpenAI from "openai";
 import pLimit from "p-limit";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { logOpenAiLatency, logOpenAiUsage } from "@/lib/openaiObservability";
 import { getEnv } from "@/server/config/env";
 
 const resultSchema = z.object({
@@ -50,11 +51,14 @@ export async function summarizePendingArticles(maxItems = 30) {
 
         let completion;
         try {
+          const start = Date.now();
           completion = await openai.responses.create({
             model: env.OPENAI_MODEL,
             temperature: 0.2,
             input: prompt,
           });
+          logOpenAiLatency("[SUMMARIZE]", start);
+          logOpenAiUsage(completion);
         } catch (error) {
           console.error(`[ERROR][SUMMARIZE]`, error);
           return "fail" as const;
