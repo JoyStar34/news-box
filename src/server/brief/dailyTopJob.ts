@@ -1,206 +1,280 @@
 import OpenAI from "openai";
-import { subDays, subHours } from "date-fns";
+import { createHash } from "node:crypto";
+import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { logOpenAiLatency, logOpenAiUsage } from "@/lib/openaiObservability";
-import { appendOpportunityJson, generateOpportunityLayerForTopArticles } from "@/server/brief/opportunityLayer";
+import { appendOpportunityJson } from "@/server/brief/opportunityLayer";
 import { getEnv } from "@/server/config/env";
 import type { Article, Source } from "@prisma/client";
 
-function utcDayStart(d: Date = new Date()): Date {
-  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+type ArticleWithSource = Article & { source: Source };
+
+type ScoredOpportunity = {
+  articleId: string;
+  title: string;
+  whyImportant: string;
+  opportunityScore: number;
+  actionIdea: string;
+};
+
+type ScoreResult = {
+  top3: ScoredOpportunity[];
+  promptHash: string;
+};
+
+const topOpportunitySchema = z.object({
+  top3: z
+    .array(
+      z.object({
+        articleId: z.string(),
+        title: z.string(),
+        whyImportant: z.string(),
+        opportunityScore: z.number(),
+        actionIdea: z.string(),
+      }),
+    )
+    .length(3),
+});
+
+function dayStart(d: Date = new Date()): Date {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 }
 
-function normalizeTitle(s: string): string {
-  return s.trim().toLowerCase().replace(/\s+/g, " ");
+function nextDayStart(d: Date = new Date()): Date {
+  const next = dayStart(d);
+  next.setDate(next.getDate() + 1);
+  return next;
+}
+
+function extractJsonValue(text: string): unknown {
+  const t = text.trim();
+  const fence = t.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fence) {
+    try {
+      return JSON.parse(fence[1].trim());
+    } catch {
+      return null;
+    }
+  }
+
+  const start = t.indexOf("{");
+  const end = t.lastIndexOf("}");
+  if (start >= 0 && end > start) {
+    try {
+      return JSON.parse(t.slice(start, end + 1));
+    } catch {
+      return null;
+    }
+  }
+
+  try {
+    return JSON.parse(t);
+  } catch {
+    return null;
+  }
+}
+
+function articleInput(a: ArticleWithSource, index: number): string {
+  const summary = (a.summaryAi?.trim() || a.summaryRaw?.trim() || "").slice(0, 600);
+  const why = (a.whyImportant?.trim() || "").slice(0, 280);
+  return [
+    `### ${index + 1}`,
+    `articleId: ${a.id}`,
+    `title: ${a.title}`,
+    `source: ${a.source.name}`,
+    `category: ${a.category}`,
+    `publishedAt: ${(a.publishedAt ?? a.fetchedAt).toISOString()}`,
+    summary ? `summary: ${summary}` : null,
+    why ? `existingWhy: ${why}` : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function normalizeOpportunity(raw: ScoredOpportunity, article: ArticleWithSource): ScoredOpportunity {
+  const why = raw.whyImportant.trim();
+  return {
+    articleId: article.id,
+    title: article.title,
+    whyImportant: why.includes("为什么现在重要") ? why : `为什么现在重要：${why}`,
+    opportunityScore: Math.round(Math.min(100, Math.max(0, raw.opportunityScore))),
+    actionIdea: raw.actionIdea.trim(),
+  };
+}
+
+function hashText(text: string): string {
+  return createHash("sha256").update(text).digest("hex").slice(0, 8);
+}
+
+function buildScoringPrompt(list: string): string {
+  return `你是一个“独立开发者 + 投资人 + 内容创作者”的AI助手。
+
+你的目标不是总结新闻，而是帮用户发现可以行动或获利的机会。
+
+请对下面“当天抓取的所有新闻”逐条判断机会价值，评分范围 0-100。
+
+评分只看：
+
+1. 是否存在“可以做的事情”（写代码 / 投资 / 内容 / 产品）
+2. 是否存在“时间窗口”（现在做 vs 以后做价值差很多）
+3. 是否存在“杠杆”（一个人做是否能放大收益）
+4. 是否有“明确触发信号”（政策 / 技术 / 产品发布 / 价格变化）
+
+请先在内部完成每条新闻评分，然后只输出综合分最高的 Top 3。
+
+输出必须是 JSON，不要 Markdown，不要解释。结构必须严格为：
+{
+  "top3": [
+    {
+      "articleId": "<必须来自输入>",
+      "title": "<使用输入里的原始标题>",
+      "whyImportant": "1-2句中文，必须包含“为什么现在重要”这几个字",
+      "opportunityScore": 0-100,
+      "actionIdea": "必须满足：
+        - 具体到“可以在24小时内执行”
+        - 必须包含动作动词（如：注册 / 测试 / 对比 / 投资 / 发布 / 监控）
+        - 不能是“关注 / 了解 / 讨论”"
+    }
+  ]
+}
+
+当天新闻：
+${list}`;
+}
+
+async function scoreTodayArticlesWithAi(openai: OpenAI, model: string, articles: ArticleWithSource[]): Promise<ScoreResult> {
+  const list = articles.map(articleInput).join("\n\n");
+  const prompt = buildScoringPrompt(list);
+  const promptHash = hashText(buildScoringPrompt(""));
+
+  const start = Date.now();
+  const completion = await openai.responses.create({
+    model,
+    temperature: 0.2,
+    input: prompt,
+  });
+  logOpenAiLatency("[DAILY_TOP]", start);
+  logOpenAiUsage(completion);
+
+  const parsed = topOpportunitySchema.safeParse(extractJsonValue(completion.output_text ?? ""));
+  if (!parsed.success) {
+    throw new Error(`AI top3 response did not match schema: ${JSON.stringify(parsed.error.flatten())}`);
+  }
+
+  const articleMap = new Map(articles.map((a) => [a.id, a]));
+  const seen = new Set<string>();
+  const top3: ScoredOpportunity[] = [];
+  for (const item of parsed.data.top3) {
+    const article = articleMap.get(item.articleId);
+    if (!article || seen.has(article.id)) continue;
+    const normalized = normalizeOpportunity(item, article);
+    if (!normalized.actionIdea || !normalized.whyImportant) continue;
+    seen.add(article.id);
+    top3.push(normalized);
+  }
+
+  if (top3.length !== 3) {
+    throw new Error(`AI returned ${top3.length} usable top articles, expected 3`);
+  }
+
+  return { top3, promptHash };
 }
 
 /**
- * Pick top 3: pool by publishedAt (36h) / fetchedAt when unpublished (24h) →
- * demote recent DailyBrief picks → top 10 by adjusted score → LLM picks 3 → persist.
+ * PMF chain: get today's full article list -> AI scores each item -> persist Top 3 opportunities.
  */
 export async function generateDailyTopNews(): Promise<{
   ok: boolean;
   briefDate: string;
   articleIds: string[];
   reason?: string;
+  promptHash?: string;
 }> {
   const env = getEnv();
-  const now = new Date();
-  const day = utcDayStart(now);
-  const cutoff36 = subHours(now, 36);
-  const cutoff24 = subHours(now, 24);
+  const day = dayStart();
+  const nextDay = nextDayStart();
 
-  type WithSource = Article & { source: Source };
+  if (!env.OPENAI_API_KEY) {
+    return { ok: false, briefDate: day.toISOString(), articleIds: [], reason: "missing_openai_api_key" };
+  }
 
-  const pool = await prisma.article.findMany({
+  const articles = await prisma.article.findMany({
     where: {
-      isRelevant: true,
-      finalScore: { not: null },
-      OR: [
-        { publishedAt: { gte: cutoff36 } },
-        {
-          AND: [{ publishedAt: null }, { fetchedAt: { gte: cutoff24 } }],
-        },
-      ],
+      fetchedAt: {
+        gte: day,
+        lt: nextDay,
+      },
     },
-    orderBy: { finalScore: "desc" },
-    take: 80,
+    orderBy: { fetchedAt: "desc" },
     include: { source: true },
   });
 
-  const recentBriefs = await prisma.dailyBrief.findMany({
-    where: {
-      briefDate: { gte: utcDayStart(subDays(now, 2)) },
+  console.log(`[DAILY_TOP] today_articles=${articles.length}`);
+
+  if (articles.length < 3) {
+    return { ok: false, briefDate: day.toISOString(), articleIds: [], reason: "not_enough_today_articles" };
+  }
+
+  const openai = new OpenAI({ apiKey: env.OPENAI_API_KEY, baseURL: env.OPENAI_BASE_URL });
+  const { top3, promptHash } = await scoreTodayArticlesWithAi(openai, env.OPENAI_MODEL, articles);
+  const articleMap = new Map(articles.map((a) => [a.id, a]));
+  const chosen = top3.map((item) => articleMap.get(item.articleId)).filter((a): a is ArticleWithSource => Boolean(a));
+
+  const bodyText = top3
+    .map(
+      (item, index) =>
+        `${index + 1}. ${item.title}\n${item.whyImportant}\n行动建议：${item.actionIdea}\n机会分：${item.opportunityScore}/100`,
+    )
+    .join("\n\n");
+
+  const body = appendOpportunityJson(
+    bodyText,
+    Object.fromEntries(
+      top3.map((item) => [
+        item.articleId,
+        {
+          whyImportant: item.whyImportant,
+          opportunityScore: item.opportunityScore,
+          actionIdea: item.actionIdea,
+        },
+      ]),
+    ),
+    {
+      generatedAt: new Date().toISOString(),
+      promptHash,
     },
-    include: { items: true },
-  });
-
-  const recentArticleIds = new Set(recentBriefs.flatMap((b) => b.items.map((i) => i.articleId)));
-
-  type WithAdj = WithSource & { adjustedScore: number };
-  const ranked: WithAdj[] = pool.map((article) => {
-    let score = article.finalScore ?? 0;
-    if (recentArticleIds.has(article.id)) {
-      score *= 0.7;
-    }
-    return { ...article, adjustedScore: score };
-  });
-
-  ranked.sort((a, b) => {
-    if (b.adjustedScore !== a.adjustedScore) return b.adjustedScore - a.adjustedScore;
-    return b.fetchedAt.getTime() - a.fetchedAt.getTime();
-  });
-
-  const stripAdj = (a: WithAdj): WithSource => {
-    const { adjustedScore, ...rest } = a;
-    void adjustedScore;
-    return rest;
-  };
-
-  const candidates: WithSource[] = ranked.slice(0, 10).map(stripAdj);
-  const fallbackTop3: WithSource[] = ranked.slice(0, 3).map(stripAdj);
-
-  console.log(`[DAILY_TOP] candidates=${candidates.length} pool=${pool.length}`);
-
-  if (candidates.length === 0) {
-    return { ok: false, briefDate: day.toISOString(), articleIds: [], reason: "no_candidates" };
-  }
-
-  let chosen: WithSource[] = fallbackTop3;
-
-  if (env.OPENAI_API_KEY && candidates.length >= 1) {
-    const openai = new OpenAI({ apiKey: env.OPENAI_API_KEY, baseURL: env.OPENAI_BASE_URL });
-    const list = candidates.map((a, i) => `${i + 1}. ${a.title} (${a.source.name})`).join("\n");
-    const pickPrompt = `From these ${candidates.length} AI/science news articles (focused on roughly the last 24–36 hours), select the 3 most important stories.
-
-Return exactly 3 lines. Each line must be ONLY the article title, copied verbatim from the list below (no numbering, no source name).
-
-${list}`;
-
-    try {
-      const startPick = Date.now();
-      const completion = await openai.responses.create({
-        model: env.OPENAI_MODEL,
-        temperature: 0.2,
-        input: pickPrompt,
-      });
-      logOpenAiLatency("[DAILY_TOP]", startPick);
-      logOpenAiUsage(completion);
-      const raw = (completion.output_text ?? "").trim();
-      const lines = raw
-        .split("\n")
-        .map((l) => l.replace(/^\d+[\).\s]+/, "").trim())
-        .filter(Boolean)
-        .slice(0, 3);
-
-      const matched: WithSource[] = [];
-      for (const line of lines) {
-        const target = normalizeTitle(line);
-        let found =
-          candidates.find((a) => normalizeTitle(a.title) === target) ??
-          candidates.find((a) => normalizeTitle(a.title).includes(target) || target.includes(normalizeTitle(a.title)));
-        if (!found && line.length > 10) {
-          found = candidates.find((a) => a.title.includes(line.slice(0, 40)) || line.includes(a.title.slice(0, 40)));
-        }
-        if (found && !matched.some((m) => m.id === found!.id)) {
-          matched.push(found);
-        }
-      }
-
-      if (matched.length >= 3) {
-        chosen = matched.slice(0, 3);
-      } else if (matched.length > 0) {
-        const rest = fallbackTop3.filter((a) => !matched.some((m) => m.id === a.id));
-        chosen = [...matched, ...rest].slice(0, 3);
-      }
-    } catch (err) {
-      console.error(`[ERROR][DAILY_TOP]`, err);
-      chosen = fallbackTop3;
-    }
-  }
-
-  console.log(`[DAILY_TOP] selected=[${chosen.map((a) => a.id).join(",")}]`);
-
-  let body = chosen.map((a, i) => `${i + 1}. ${a.title}`).join("\n");
-  if (env.OPENAI_API_KEY) {
-    const openai = new OpenAI({ apiKey: env.OPENAI_API_KEY, baseURL: env.OPENAI_BASE_URL });
-    const listText = chosen.map((a, i) => `${i + 1}. ${a.title} (${a.source.name})`).join("\n");
-    try {
-      const startBrief = Date.now();
-      const completion = await openai.responses.create({
-        model: env.OPENAI_MODEL,
-        temperature: 0.2,
-        input: `Summarize these 3 scientific breakthroughs into a short daily brief (3 sentences, Chinese).\n${listText}`,
-      });
-      logOpenAiLatency("[DAILY_TOP]", startBrief);
-      logOpenAiUsage(completion);
-      body = completion.output_text?.trim() || body;
-    } catch (err) {
-      console.error(`[ERROR][DAILY_TOP]`, err);
-      // keep body as title list
-    }
-  }
-
-  if (env.OPENAI_API_KEY && chosen.length > 0) {
-    try {
-      const openai = new OpenAI({ apiKey: env.OPENAI_API_KEY, baseURL: env.OPENAI_BASE_URL });
-      const opMap = await generateOpportunityLayerForTopArticles(openai, env.OPENAI_MODEL, chosen);
-      if (Object.keys(opMap).length > 0) {
-        body = appendOpportunityJson(body, opMap);
-      }
-    } catch (err) {
-      console.error(`[ERROR][DAILY_TOP] opportunity layer`, err);
-    }
-  }
+  );
 
   await prisma.$transaction(async (tx) => {
     const brief = await tx.dailyBrief.upsert({
       where: { briefDate: day },
-      create: {
-        briefDate: day,
-        body,
-      },
-      update: {
-        body,
-      },
+      create: { briefDate: day, body },
+      update: { body },
     });
 
     await tx.dailyBriefItem.deleteMany({ where: { briefId: brief.id } });
-
     await tx.dailyBriefItem.createMany({
-      data: chosen.map((a, idx) => ({
+      data: chosen.map((article, idx) => ({
         briefId: brief.id,
-        articleId: a.id,
+        articleId: article.id,
         position: idx + 1,
       })),
     });
+
+    for (const item of top3) {
+      await tx.article.update({
+        where: { id: item.articleId },
+        data: { whyImportant: item.whyImportant },
+      });
+    }
   });
 
-  console.log(`[DAILY_TOP] daily brief generated`);
+  console.log(`[DAILY_TOP] selected=[${top3.map((a) => a.articleId).join(",")}]`);
 
   return {
     ok: true,
     briefDate: day.toISOString(),
-    articleIds: chosen.map((a) => a.id),
+    articleIds: top3.map((a) => a.articleId),
+    promptHash,
   };
 }

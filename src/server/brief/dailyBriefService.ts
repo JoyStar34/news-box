@@ -1,79 +1,44 @@
-import { subHours } from "date-fns";
 import { prisma } from "@/lib/prisma";
 import type { Article, Source } from "@prisma/client";
 import {
   mergeOpportunityIntoArticles,
+  parseOpportunityMetaFromBody,
   stripOpportunityFromBody,
   type ArticleOpportunityFields,
+  type OpportunityMeta,
 } from "@/server/brief/opportunityLayer";
 
 export type ArticleWithSource = Article & { source: Source };
+export type TopBriefArticle = ArticleWithSource & ArticleOpportunityFields;
 
-/** Homepage Top 3 row: optional UX flags + opportunity layer (runtime only). */
-export type TopBriefArticle = ArticleWithSource & {
-  repeatFromYesterday?: boolean;
-} & ArticleOpportunityFields;
-
-function utcDayStart(d: Date = new Date()): Date {
-  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+function dayStart(d: Date = new Date()): Date {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 }
 
-function utcYesterdayStart(from: Date = new Date()): Date {
-  const t = utcDayStart(from);
-  const y = new Date(t);
-  y.setUTCDate(y.getUTCDate() - 1);
-  return y;
-}
-
-/** Article IDs that appeared on yesterday's DailyBrief (UTC calendar day). */
 export async function getYesterdayTopArticleIds(): Promise<Set<string>> {
-  const brief = await prisma.dailyBrief.findUnique({
-    where: { briefDate: utcYesterdayStart() },
-    include: { items: { select: { articleId: true } } },
-  });
-  return new Set(brief?.items.map((i) => i.articleId) ?? []);
+  return new Set();
 }
 
-/** Raw DailyBrief.body for today (includes embedded opportunity JSON). */
 export async function getTodayDailyBriefBody(): Promise<string | null> {
   const brief = await prisma.dailyBrief.findUnique({
-    where: { briefDate: utcDayStart() },
+    where: { briefDate: dayStart() },
     select: { body: true },
   });
   return brief?.body ?? null;
 }
 
-export function attachRepeatFromYesterday<T extends ArticleWithSource>(
-  items: T[],
-  yesterdayIds: Set<string>,
-): (T & { repeatFromYesterday?: boolean })[] {
-  return items.map((item) =>
-    yesterdayIds.has(item.id) ? { ...item, repeatFromYesterday: true } : item,
-  );
+export function attachRepeatFromYesterday<T extends ArticleWithSource>(items: T[], _yesterdayIds?: Set<string>): T[] {
+  void _yesterdayIds;
+  return items;
 }
 
-/** Fallback when DailyBrief not yet generated: recent high-ranked articles only */
 export async function getFallbackTopArticles(): Promise<ArticleWithSource[]> {
-  const since = subHours(new Date(), 24);
-  return prisma.article.findMany({
-    where: {
-      isRelevant: true,
-      finalScore: { not: null },
-      fetchedAt: { gte: since },
-    },
-    orderBy: [{ finalScore: "desc" }, { fetchedAt: "desc" }],
-    take: 3,
-    include: { source: true },
-  });
+  return [];
 }
 
-/**
- * Top 3 for homepage and /api/top: today's DailyBrief items, else recent ranked articles (24h).
- */
 export async function getDailyTopArticles(): Promise<ArticleWithSource[]> {
-  const day = utcDayStart();
   const brief = await prisma.dailyBrief.findUnique({
-    where: { briefDate: day },
+    where: { briefDate: dayStart() },
     include: {
       items: {
         orderBy: { position: "asc" },
@@ -83,57 +48,44 @@ export async function getDailyTopArticles(): Promise<ArticleWithSource[]> {
   });
 
   if (brief?.items.length) {
-    return brief.items.map((i) => {
-      const a = i.article;
-      return { ...a, source: a.source };
-    });
+    return brief.items.map((i) => ({ ...i.article, source: i.article.source }));
   }
 
-  return getFallbackTopArticles();
+  return [];
 }
 
 export type DailyBriefResult = {
   title: string;
   text: string;
   items: TopBriefArticle[];
+  meta: OpportunityMeta;
 };
 
-/**
- * Body text + top items for the homepage radar panel.
- */
 export async function buildDailyBriefFromStore(): Promise<DailyBriefResult> {
-  const day = utcDayStart();
-  const [brief, yesterdayIds] = await Promise.all([
-    prisma.dailyBrief.findUnique({
-      where: { briefDate: day },
-      include: {
-        items: {
-          orderBy: { position: "asc" },
-          include: { article: { include: { source: true } } },
-        },
+  const brief = await prisma.dailyBrief.findUnique({
+    where: { briefDate: dayStart() },
+    include: {
+      items: {
+        orderBy: { position: "asc" },
+        include: { article: { include: { source: true } } },
       },
-    }),
-    getYesterdayTopArticleIds(),
-  ]);
+    },
+  });
 
-  const rawItems: ArticleWithSource[] =
-    brief?.items.map((i) => ({ ...i.article, source: i.article.source })) ?? (await getDailyTopArticles());
-
-  const items: TopBriefArticle[] = mergeOpportunityIntoArticles(
-    attachRepeatFromYesterday(rawItems, yesterdayIds),
-    brief?.body,
-  );
-
-  const emptyCopy = "当前暂无高价值信号，稍后更新。";
-
-  const rawBriefDisplay = brief?.body ? stripOpportunityFromBody(brief.body) : null;
-  const text =
-    rawBriefDisplay ??
-    (items.length ? items.map((item, idx) => `${idx + 1}. ${item.title}`).join("\n") : emptyCopy);
+  const rawItems: ArticleWithSource[] = brief?.items.map((i) => ({ ...i.article, source: i.article.source })) ?? [];
+  const items = mergeOpportunityIntoArticles(rawItems, brief?.body)
+    .filter((item) => item.opportunityScore != null && Boolean(item.actionIdea?.trim()))
+    .slice(0, 3);
+  const text = brief?.body
+    ? stripOpportunityFromBody(brief.body)
+    : items.length
+      ? items.map((item, idx) => `${idx + 1}. ${item.title}`).join("\n")
+      : "今天还没有可展示的机会。";
 
   return {
-    title: "今日机会雷达",
+    title: "今日 AI 机会 Top 3",
     text,
     items,
+    meta: parseOpportunityMetaFromBody(brief?.body),
   };
 }
