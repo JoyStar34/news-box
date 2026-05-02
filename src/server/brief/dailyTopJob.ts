@@ -1,10 +1,9 @@
 import OpenAI from "openai";
+import { subDays, subHours } from "date-fns";
 import { prisma } from "@/lib/prisma";
 import { logOpenAiLatency, logOpenAiUsage } from "@/lib/openaiObservability";
 import { getEnv } from "@/server/config/env";
 import type { Article, Source } from "@prisma/client";
-
-const HOURS_48_MS = 48 * 60 * 60 * 1000;
 
 function utcDayStart(d: Date = new Date()): Date {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
@@ -15,8 +14,8 @@ function normalizeTitle(s: string): string {
 }
 
 /**
- * Pick top 3 for the day: take top 10 by final_score → LLM picks best 3 titles →
- * persist DailyBrief + DailyBriefItem. Falls back to score order if LLM matching fails.
+ * Pick top 3: pool by publishedAt (36h) / fetchedAt when unpublished (24h) →
+ * demote recent DailyBrief picks → top 10 by adjusted score → LLM picks 3 → persist.
  */
 export async function generateDailyTopNews(): Promise<{
   ok: boolean;
@@ -26,35 +25,71 @@ export async function generateDailyTopNews(): Promise<{
 }> {
   const env = getEnv();
   const now = new Date();
-  const cutoff = new Date(now.getTime() - HOURS_48_MS);
   const day = utcDayStart(now);
+  const cutoff36 = subHours(now, 36);
+  const cutoff24 = subHours(now, 24);
 
   type WithSource = Article & { source: Source };
-  const candidates: WithSource[] = await prisma.article.findMany({
+
+  const pool = await prisma.article.findMany({
     where: {
       isRelevant: true,
       finalScore: { not: null },
-      fetchedAt: { gte: cutoff },
+      OR: [
+        { publishedAt: { gte: cutoff36 } },
+        {
+          AND: [{ publishedAt: null }, { fetchedAt: { gte: cutoff24 } }],
+        },
+      ],
     },
     orderBy: { finalScore: "desc" },
-    take: 10,
+    take: 80,
     include: { source: true },
   });
 
-  console.log(`[DAILY_TOP] candidates=${candidates.length}`);
+  const recentBriefs = await prisma.dailyBrief.findMany({
+    where: {
+      briefDate: { gte: utcDayStart(subDays(now, 2)) },
+    },
+    include: { items: true },
+  });
+
+  const recentArticleIds = new Set(recentBriefs.flatMap((b) => b.items.map((i) => i.articleId)));
+
+  type WithAdj = WithSource & { adjustedScore: number };
+  const ranked: WithAdj[] = pool.map((article) => {
+    let score = article.finalScore ?? 0;
+    if (recentArticleIds.has(article.id)) {
+      score *= 0.7;
+    }
+    return { ...article, adjustedScore: score };
+  });
+
+  ranked.sort((a, b) => {
+    if (b.adjustedScore !== a.adjustedScore) return b.adjustedScore - a.adjustedScore;
+    return b.fetchedAt.getTime() - a.fetchedAt.getTime();
+  });
+
+  const stripAdj = (a: WithAdj): WithSource => {
+    const { adjustedScore: _, ...rest } = a;
+    return rest;
+  };
+
+  const candidates: WithSource[] = ranked.slice(0, 10).map(stripAdj);
+  const fallbackTop3: WithSource[] = ranked.slice(0, 3).map(stripAdj);
+
+  console.log(`[DAILY_TOP] candidates=${candidates.length} pool=${pool.length}`);
 
   if (candidates.length === 0) {
     return { ok: false, briefDate: day.toISOString(), articleIds: [], reason: "no_candidates" };
   }
-
-  const fallbackTop3: WithSource[] = candidates.slice(0, 3);
 
   let chosen: WithSource[] = fallbackTop3;
 
   if (env.OPENAI_API_KEY && candidates.length >= 1) {
     const openai = new OpenAI({ apiKey: env.OPENAI_API_KEY, baseURL: env.OPENAI_BASE_URL });
     const list = candidates.map((a, i) => `${i + 1}. ${a.title} (${a.source.name})`).join("\n");
-    const pickPrompt = `From these ${candidates.length} AI/science news articles, select the 3 most important stories today.
+    const pickPrompt = `From these ${candidates.length} AI/science news articles (focused on roughly the last 24–36 hours), select the 3 most important stories.
 
 Return exactly 3 lines. Each line must be ONLY the article title, copied verbatim from the list below (no numbering, no source name).
 

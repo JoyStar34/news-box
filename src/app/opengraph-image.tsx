@@ -1,6 +1,6 @@
 import { ImageResponse } from "next/og";
 
-export const alt = "News Box - 今日科技与科学突破";
+export const alt = "News Box - 过去 24 小时科技与科学要闻";
 export const size = {
   width: 1200,
   height: 630,
@@ -27,7 +27,7 @@ export default function Image() {
         <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
           <div style={{ fontSize: 64, fontWeight: 700, lineHeight: 1.1 }}>Today in Science</div>
           <div style={{ fontSize: 34, opacity: 0.92 }}>全球科技、AI、科学与天文新闻聚合</div>
-          <div style={{ fontSize: 28, opacity: 0.82 }}>AI 自动摘要 · Top3 每日突破</div>
+          <div style={{ fontSize: 28, opacity: 0.82 }}>AI 自动摘要 · 24h 重点精选</div>
         </div>
       </div>
     ),

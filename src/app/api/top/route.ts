@@ -1,9 +1,18 @@
 import { NextResponse } from "next/server";
-import { getDailyTopArticles } from "@/server/brief/dailyBriefService";
+import { getTimeLabel } from "@/lib/articleTimeLabels";
+import {
+  attachRepeatFromYesterday,
+  getDailyTopArticles,
+  getYesterdayTopArticleIds,
+} from "@/server/brief/dailyBriefService";
 
 export async function GET() {
-  const top = await getDailyTopArticles();
+  const [top, yesterdayIds] = await Promise.all([getDailyTopArticles(), getYesterdayTopArticleIds()]);
+  const withMeta = attachRepeatFromYesterday(top, yesterdayIds).map((article) => ({
+    ...article,
+    timeLabel: getTimeLabel(article),
+  }));
 
-  return NextResponse.json({ data: top });
+  return NextResponse.json({ data: withMeta });
 }
 

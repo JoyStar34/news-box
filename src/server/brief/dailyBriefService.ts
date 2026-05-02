@@ -1,16 +1,52 @@
+import { subHours } from "date-fns";
 import { prisma } from "@/lib/prisma";
 import type { Article, Source } from "@prisma/client";
 
 export type ArticleWithSource = Article & { source: Source };
 
+/** Homepage Top 3 row: optional UX flags (API may omit). */
+export type TopBriefArticle = ArticleWithSource & {
+  repeatFromYesterday?: boolean;
+};
+
 function utcDayStart(d: Date = new Date()): Date {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
 }
 
-/** Fallback when DailyBrief not yet generated: best ranked relevant articles */
+function utcYesterdayStart(from: Date = new Date()): Date {
+  const t = utcDayStart(from);
+  const y = new Date(t);
+  y.setUTCDate(y.getUTCDate() - 1);
+  return y;
+}
+
+/** Article IDs that appeared on yesterday's DailyBrief (UTC calendar day). */
+export async function getYesterdayTopArticleIds(): Promise<Set<string>> {
+  const brief = await prisma.dailyBrief.findUnique({
+    where: { briefDate: utcYesterdayStart() },
+    include: { items: { select: { articleId: true } } },
+  });
+  return new Set(brief?.items.map((i) => i.articleId) ?? []);
+}
+
+export function attachRepeatFromYesterday<T extends ArticleWithSource>(
+  items: T[],
+  yesterdayIds: Set<string>,
+): (T & { repeatFromYesterday?: boolean })[] {
+  return items.map((item) =>
+    yesterdayIds.has(item.id) ? { ...item, repeatFromYesterday: true } : item,
+  );
+}
+
+/** Fallback when DailyBrief not yet generated: recent high-ranked articles only */
 export async function getFallbackTopArticles(): Promise<ArticleWithSource[]> {
+  const since = subHours(new Date(), 24);
   return prisma.article.findMany({
-    where: { isRelevant: true, finalScore: { not: null } },
+    where: {
+      isRelevant: true,
+      finalScore: { not: null },
+      fetchedAt: { gte: since },
+    },
     orderBy: [{ finalScore: "desc" }, { fetchedAt: "desc" }],
     take: 3,
     include: { source: true },
@@ -18,7 +54,7 @@ export async function getFallbackTopArticles(): Promise<ArticleWithSource[]> {
 }
 
 /**
- * Top 3 for homepage and /api/top: today's DailyBrief items, else legacy score order.
+ * Top 3 for homepage and /api/top: today's DailyBrief items, else recent ranked articles (24h).
  */
 export async function getDailyTopArticles(): Promise<ArticleWithSource[]> {
   const day = utcDayStart();
@@ -39,20 +75,13 @@ export async function getDailyTopArticles(): Promise<ArticleWithSource[]> {
     });
   }
 
-  const ranked = await getFallbackTopArticles();
-  if (ranked.length) return ranked;
-
-  return prisma.article.findMany({
-    orderBy: [{ score: "desc" }, { fetchedAt: "desc" }],
-    take: 3,
-    include: { source: true },
-  });
+  return getFallbackTopArticles();
 }
 
 export type DailyBriefResult = {
   title: string;
   text: string;
-  items: ArticleWithSource[];
+  items: TopBriefArticle[];
 };
 
 /**
@@ -60,24 +89,27 @@ export type DailyBriefResult = {
  */
 export async function buildDailyBriefFromStore(): Promise<DailyBriefResult> {
   const day = utcDayStart();
-  const brief = await prisma.dailyBrief.findUnique({
-    where: { briefDate: day },
-    include: {
-      items: {
-        orderBy: { position: "asc" },
-        include: { article: { include: { source: true } } },
+  const [brief, yesterdayIds] = await Promise.all([
+    prisma.dailyBrief.findUnique({
+      where: { briefDate: day },
+      include: {
+        items: {
+          orderBy: { position: "asc" },
+          include: { article: { include: { source: true } } },
+        },
       },
-    },
-  });
+    }),
+    getYesterdayTopArticleIds(),
+  ]);
 
-  const items: ArticleWithSource[] =
+  const rawItems: ArticleWithSource[] =
     brief?.items.map((i) => ({ ...i.article, source: i.article.source })) ?? (await getDailyTopArticles());
 
-  const text =
-    brief?.body ??
-    (items.length
-      ? items.map((item, idx) => `${idx + 1}. ${item.title}`).join("\n")
-      : "暂无可用新闻数据，请先触发抓取与评分任务。");
+  const items: TopBriefArticle[] = attachRepeatFromYesterday(rawItems, yesterdayIds);
+
+  const emptyCopy = "当前暂无重要新闻，稍后更新";
+
+  const text = brief?.body ?? (items.length ? items.map((item, idx) => `${idx + 1}. ${item.title}`).join("\n") : emptyCopy);
 
   return {
     title: "Today in Science",

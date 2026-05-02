@@ -23,7 +23,7 @@ export const metadata: Metadata = {
     default: "News Box",
     template: "%s | News Box",
   },
-  description: "聚合全球科技、AI、自然科学与天文学新闻，提供中文 AI 摘要与每日重点。",
+  description: "聚合全球科技、AI、自然科学与天文学新闻，提供中文 AI 摘要与 24 小时重点精选。",
   keywords: ["AI新闻", "科技新闻", "科学新闻", "天文新闻", "arXiv", "OpenRouter", "News Box"],
   alternates: {
     canonical: "/",
@@ -32,7 +32,7 @@ export const metadata: Metadata = {
     type: "website",
     url: "/",
     title: "News Box",
-    description: "每天快速浏览最重要的科技与科学突破。",
+    description: "快速浏览过去 24 小时最重要的科技与科学突破。",
     siteName: "News Box",
     locale: "zh_CN",
     images: [

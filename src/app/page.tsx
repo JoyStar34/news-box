@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Category } from "@prisma/client";
 import { DISPLAY_SUMMARY_FALLBACK, DISPLAY_WHY_FALLBACK } from "@/lib/articleDisplayDefaults";
+import { getTimeLabel } from "@/lib/articleTimeLabels";
 import { prisma } from "@/lib/prisma";
 import { buildDailyBriefFromStore } from "@/server/brief/dailyBriefService";
 
@@ -243,11 +244,24 @@ export default async function Home({
       </section>
 
       <section className="mb-10">
-        <h2 className="mb-4 text-xl font-semibold">今日 3 条最重要突破</h2>
+        <h2 className="mb-4 text-xl font-semibold">过去 24 小时最重要</h2>
+        {top.length === 0 ? (
+          <p className="text-sm text-zinc-600">当前暂无重要新闻，稍后更新</p>
+        ) : (
         <div className="grid gap-4 md:grid-cols-3">
           {top.map((article) => (
             <article key={article.id} className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
-              <p className="text-xs text-zinc-500">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-800">
+                  {getTimeLabel(article)}
+                </span>
+                {article.repeatFromYesterday ? (
+                  <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-900">
+                    连续上榜
+                  </span>
+                ) : null}
+              </div>
+              <p className="mt-2 text-xs text-zinc-500">
                 {article.source.name} · {article.category} · {formatDate(article.publishedAt)}
               </p>
               <h3 className="mt-2 font-semibold leading-6">{article.title}</h3>
@@ -263,6 +277,7 @@ export default async function Home({
             </article>
           ))}
         </div>
+        )}
       </section>
 
       <section>
