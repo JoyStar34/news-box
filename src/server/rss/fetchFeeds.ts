@@ -1,5 +1,5 @@
 import Parser from "rss-parser";
-import { defaultWhyImportantFromSummaryRaw } from "@/lib/articleDisplayDefaults";
+import { PERSISTED_WHY_FALLBACK } from "@/lib/articleDisplayDefaults";
 import { prisma } from "@/lib/prisma";
 import { normalizeFeedItem } from "@/server/rss/normalizeFeedItem";
 import { RSS_SOURCES } from "@/server/rss/sources";
@@ -49,8 +49,6 @@ export async function fetchFeeds(traceId?: string) {
           sourcePriority: source.priority,
         });
 
-        const whyDefault = defaultWhyImportantFromSummaryRaw(normalized.summaryRaw);
-
         await prisma.article.upsert({
           where: { url: normalized.url },
           update: {
@@ -71,7 +69,7 @@ export async function fetchFeeds(traceId?: string) {
             category: normalized.category,
             contentHash: normalized.contentHash,
             score,
-            whyImportant: whyDefault,
+            whyImportant: PERSISTED_WHY_FALLBACK,
           },
         });
 
@@ -80,7 +78,7 @@ export async function fetchFeeds(traceId?: string) {
             url: normalized.url,
             OR: [{ whyImportant: null }, { whyImportant: "" }],
           },
-          data: { whyImportant: whyDefault },
+          data: { whyImportant: PERSISTED_WHY_FALLBACK },
         });
 
         inserted += 1;
@@ -96,4 +94,3 @@ export async function fetchFeeds(traceId?: string) {
 
   return { inserted, failed, sources: activeSources.length };
 }
-

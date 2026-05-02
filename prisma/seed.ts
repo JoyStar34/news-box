@@ -1,8 +1,5 @@
 import { PrismaClient, Category } from "@prisma/client";
-import {
-  defaultWhyImportantFromSummaryRaw,
-  fallbackSummaryAiText,
-} from "../src/lib/articleDisplayDefaults";
+import { ensureWhyImportant, fallbackSummaryAiText } from "../src/lib/articleDisplayDefaults";
 
 const prisma = new PrismaClient();
 
@@ -84,7 +81,7 @@ async function main() {
       where: { id: row.id },
       data: {
         summaryAi: row.summaryAi?.trim() || fallbackSummaryAiText(row.summaryRaw),
-        whyImportant: row.whyImportant?.trim() || defaultWhyImportantFromSummaryRaw(row.summaryRaw),
+        whyImportant: ensureWhyImportant(row.whyImportant),
       },
     });
   }

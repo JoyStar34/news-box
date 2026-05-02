@@ -1,10 +1,7 @@
 import OpenAI from "openai";
 import pLimit from "p-limit";
 import { z } from "zod";
-import {
-  defaultWhyImportantFromSummaryRaw,
-  fallbackSummaryAiText,
-} from "@/lib/articleDisplayDefaults";
+import { ensureWhyImportant, fallbackSummaryAiText } from "@/lib/articleDisplayDefaults";
 import { prisma } from "@/lib/prisma";
 import { logOpenAiLatency, logOpenAiUsage } from "@/lib/openaiObservability";
 import { getEnv } from "@/server/config/env";
@@ -14,38 +11,46 @@ const partialResultSchema = z.object({
   whyImportant: z.string().min(1).optional(),
 });
 
+function ensureSummaryAi(
+  article: { summaryRaw: string | null; summaryAi: string | null },
+  parsed?: string,
+): string {
+  const fromParsed = parsed?.trim();
+  const fromDb = article.summaryAi?.trim();
+  const fromRaw = fallbackSummaryAiText(article.summaryRaw);
+  return (fromParsed || fromDb || fromRaw).trim() || fromRaw;
+}
+
 function mergeSummarizeFields(
   article: { summaryRaw: string | null; summaryAi: string | null; whyImportant: string | null },
   parsed: { summaryAi?: string; whyImportant?: string },
 ): { summaryAi: string; whyImportant: string } {
-  const summaryAi =
-    (parsed.summaryAi?.trim() || article.summaryAi?.trim() || fallbackSummaryAiText(article.summaryRaw)).trim();
-  const whyImportant =
-    (parsed.whyImportant?.trim() ||
-      article.whyImportant?.trim() ||
-      defaultWhyImportantFromSummaryRaw(article.summaryRaw)).trim();
-  return { summaryAi, whyImportant };
+  return {
+    summaryAi: ensureSummaryAi(article, parsed.summaryAi),
+    whyImportant: ensureWhyImportant(parsed.whyImportant ?? article.whyImportant),
+  };
 }
 
-export async function summarizePendingArticles(maxItems = 30) {
-  const env = getEnv();
-
-  const pendingWhere = {
-    AND: [
-      { OR: [{ isRelevant: null }, { isRelevant: true }] },
-      {
-        OR: [
-          { summaryAi: null },
-          { whyImportant: null },
-          { whyImportant: "" },
-          { summaryAi: "" },
-        ],
-      },
+/**
+ * 待处理：summaryAi 或 whyImportant 缺失（含空串）。不按 isRelevant 过滤。
+ * 仅含 null/"" 的 DB 条件；全空白行依赖 backfill-why-important 或单次写入时的 ensureWhyImportant。
+ */
+function pendingWhereClause() {
+  return {
+    OR: [
+      { summaryAi: null },
+      { summaryAi: "" },
+      { whyImportant: null },
+      { whyImportant: "" },
     ],
   };
+}
+
+export async function summarizePendingArticles(maxItems = 100) {
+  const env = getEnv();
 
   const pending = await prisma.article.findMany({
-    where: pendingWhere,
+    where: pendingWhereClause(),
     include: { source: true },
     orderBy: { fetchedAt: "desc" },
     take: maxItems,
@@ -53,17 +58,26 @@ export async function summarizePendingArticles(maxItems = 30) {
 
   console.log(`[SUMMARIZE] queued=${pending.length}`);
 
+  const writeFallbacks = async (article: {
+    id: string;
+    summaryRaw: string | null;
+    summaryAi: string | null;
+    whyImportant: string | null;
+  }) => {
+    await prisma.article.update({
+      where: { id: article.id },
+      data: {
+        summaryAi: ensureSummaryAi(article, undefined),
+        whyImportant: ensureWhyImportant(article.whyImportant),
+      },
+    });
+  };
+
   if (!env.OPENAI_API_KEY) {
-    console.log(`[SUMMARIZE] OPENAI_API_KEY not configured — applying display fallbacks`);
+    console.log(`[SUMMARIZE] OPENAI_API_KEY not configured — applying fallbacks`);
     let n = 0;
     for (const article of pending) {
-      await prisma.article.update({
-        where: { id: article.id },
-        data: {
-          summaryAi: article.summaryAi?.trim() || fallbackSummaryAiText(article.summaryRaw),
-          whyImportant: article.whyImportant?.trim() || defaultWhyImportantFromSummaryRaw(article.summaryRaw),
-        },
-      });
+      await writeFallbacks(article);
       n += 1;
     }
     return { processed: n, skipped: 0, reason: "OPENAI_API_KEY not configured (fallbacks applied)" };
@@ -88,13 +102,6 @@ export async function summarizePendingArticles(maxItems = 30) {
           `Summary: ${article.summaryRaw ?? "N/A"}`,
         ].join("\n");
 
-        const applyFallbacks = async () => {
-          await prisma.article.update({
-            where: { id: article.id },
-            data: mergeSummarizeFields(article, {}),
-          });
-        };
-
         let completion;
         try {
           const start = Date.now();
@@ -107,14 +114,14 @@ export async function summarizePendingArticles(maxItems = 30) {
           logOpenAiUsage(completion);
         } catch (error) {
           console.error(`[ERROR][SUMMARIZE]`, error);
-          await applyFallbacks();
+          await writeFallbacks(article);
           return "fail" as const;
         }
 
         const text = completion.output_text ?? "";
         const jsonMatch = text.match(/\{[\s\S]*\}/);
         if (!jsonMatch) {
-          await applyFallbacks();
+          await writeFallbacks(article);
           return "fail" as const;
         }
 
@@ -122,13 +129,13 @@ export async function summarizePendingArticles(maxItems = 30) {
         try {
           parsedJson = JSON.parse(jsonMatch[0]);
         } catch {
-          await applyFallbacks();
+          await writeFallbacks(article);
           return "fail" as const;
         }
 
         const partial = partialResultSchema.safeParse(parsedJson);
         if (!partial.success) {
-          await applyFallbacks();
+          await writeFallbacks(article);
           return "fail" as const;
         }
 
