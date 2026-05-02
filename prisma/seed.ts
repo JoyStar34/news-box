@@ -1,4 +1,8 @@
 import { PrismaClient, Category } from "@prisma/client";
+import {
+  defaultWhyImportantFromSummaryRaw,
+  fallbackSummaryAiText,
+} from "../src/lib/articleDisplayDefaults";
 
 const prisma = new PrismaClient();
 
@@ -61,6 +65,26 @@ async function main() {
         importanceScore: 85,
         finalScore: 85,
         relevanceScore: 100,
+      },
+    });
+  }
+
+  const stale = await prisma.article.findMany({
+    where: {
+      OR: [
+        { summaryAi: null },
+        { whyImportant: null },
+        { summaryAi: "" },
+        { whyImportant: "" },
+      ],
+    },
+  });
+  for (const row of stale) {
+    await prisma.article.update({
+      where: { id: row.id },
+      data: {
+        summaryAi: row.summaryAi?.trim() || fallbackSummaryAiText(row.summaryRaw),
+        whyImportant: row.whyImportant?.trim() || defaultWhyImportantFromSummaryRaw(row.summaryRaw),
       },
     });
   }

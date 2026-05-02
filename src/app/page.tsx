@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Category } from "@prisma/client";
+import { DISPLAY_SUMMARY_FALLBACK, DISPLAY_WHY_FALLBACK } from "@/lib/articleDisplayDefaults";
 import { prisma } from "@/lib/prisma";
 import { buildDailyBriefFromStore } from "@/server/brief/dailyBriefService";
 
@@ -250,10 +251,12 @@ export default async function Home({
                 {article.source.name} · {article.category} · {formatDate(article.publishedAt)}
               </p>
               <h3 className="mt-2 font-semibold leading-6">{article.title}</h3>
-              <p className="mt-2 line-clamp-5 text-sm text-zinc-700">{article.summaryAi ?? article.summaryRaw ?? "暂无摘要"}</p>
-              {article.whyImportant ? (
-                <p className="mt-2 rounded-lg bg-zinc-100 p-2 text-xs text-zinc-700">为什么重要：{article.whyImportant}</p>
-              ) : null}
+              <p className="mt-2 line-clamp-5 text-sm text-zinc-700">
+                {article.summaryAi?.trim() || article.summaryRaw?.trim() || DISPLAY_SUMMARY_FALLBACK}
+              </p>
+              <p className="mt-2 rounded-lg bg-zinc-100 p-2 text-xs text-zinc-700">
+                为什么重要：{article.whyImportant?.trim() || DISPLAY_WHY_FALLBACK}
+              </p>
               <Link className="mt-3 inline-block text-sm text-blue-600 hover:underline" href={article.url} target="_blank">
                 阅读原文
               </Link>
@@ -337,10 +340,12 @@ export default async function Home({
                 {article.source.name} · {article.category} · {formatDate(article.publishedAt ?? article.fetchedAt)}
               </p>
               <h3 className="mt-1 font-semibold">{article.title}</h3>
-              <p className="mt-2 line-clamp-4 text-sm text-zinc-700">{article.summaryAi ?? article.summaryRaw ?? "暂无摘要"}</p>
-              {article.whyImportant ? (
-                <p className="mt-2 rounded-lg bg-zinc-100 p-2 text-xs text-zinc-700">为什么重要：{article.whyImportant}</p>
-              ) : null}
+              <p className="mt-2 line-clamp-4 text-sm text-zinc-700">
+                {article.summaryAi?.trim() || article.summaryRaw?.trim() || DISPLAY_SUMMARY_FALLBACK}
+              </p>
+              <p className="mt-2 rounded-lg bg-zinc-100 p-2 text-xs text-zinc-700">
+                为什么重要：{article.whyImportant?.trim() || DISPLAY_WHY_FALLBACK}
+              </p>
               <Link className="mt-2 inline-block text-sm text-blue-600 hover:underline" href={article.url} target="_blank">
                 原文链接
               </Link>

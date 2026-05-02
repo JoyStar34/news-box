@@ -1,4 +1,5 @@
 import Parser from "rss-parser";
+import { defaultWhyImportantFromSummaryRaw } from "@/lib/articleDisplayDefaults";
 import { prisma } from "@/lib/prisma";
 import { normalizeFeedItem } from "@/server/rss/normalizeFeedItem";
 import { RSS_SOURCES } from "@/server/rss/sources";
@@ -48,6 +49,8 @@ export async function fetchFeeds(traceId?: string) {
           sourcePriority: source.priority,
         });
 
+        const whyDefault = defaultWhyImportantFromSummaryRaw(normalized.summaryRaw);
+
         await prisma.article.upsert({
           where: { url: normalized.url },
           update: {
@@ -68,7 +71,16 @@ export async function fetchFeeds(traceId?: string) {
             category: normalized.category,
             contentHash: normalized.contentHash,
             score,
+            whyImportant: whyDefault,
           },
+        });
+
+        await prisma.article.updateMany({
+          where: {
+            url: normalized.url,
+            OR: [{ whyImportant: null }, { whyImportant: "" }],
+          },
+          data: { whyImportant: whyDefault },
         });
 
         inserted += 1;
