@@ -1,7 +1,13 @@
 import OpenAI from "openai";
 import pLimit from "p-limit";
+import { Prisma } from "@prisma/client";
 import { z } from "zod";
-import { ensureWhyImportant, fallbackSummaryAiText } from "@/lib/articleDisplayDefaults";
+import {
+  PERSISTED_WHY_FALLBACK,
+  ensureWhyImportant,
+  fallbackSummaryAiText,
+} from "@/lib/articleDisplayDefaults";
+import { normalizeOptionalDbText } from "@/lib/dbText";
 import { prisma } from "@/lib/prisma";
 import { logOpenAiLatency, logOpenAiUsage } from "@/lib/openaiObservability";
 import { getEnv } from "@/server/config/env";
@@ -32,31 +38,64 @@ function mergeSummarizeFields(
 }
 
 /**
- * 待处理：summaryAi 或 whyImportant 缺失（含空串）。不按 isRelevant 过滤。
- * 仅含 null/"" 的 DB 条件；全空白行依赖 backfill-why-important 或单次写入时的 ensureWhyImportant。
+ * 优先级（高→低）：whyImportant 缺失 → fetchedAt 新 → score 高。
+ * PostgreSQL 单纯 `whyImportant asc` 会把 NULL 排在末尾，故用 CASE + raw SQL 排序 id。
  */
-function pendingWhereClause() {
-  return {
-    OR: [
-      { summaryAi: null },
-      { summaryAi: "" },
-      { whyImportant: null },
-      { whyImportant: "" },
-    ],
-  };
+async function fetchPendingArticlesOrdered(maxItems: number) {
+  const idRows = await prisma.$queryRaw<{ id: string }[]>(
+    Prisma.sql`
+      SELECT id FROM "Article"
+      WHERE (
+          "summaryAi" IS NULL OR TRIM(BOTH FROM COALESCE("summaryAi", '')) = ''
+          OR "whyImportant" IS NULL OR TRIM(BOTH FROM COALESCE("whyImportant", '')) = ''
+        )
+      ORDER BY
+        CASE
+          WHEN "whyImportant" IS NULL OR TRIM(BOTH FROM COALESCE("whyImportant", '')) = '' THEN 0
+          ELSE 1
+        END ASC,
+        "fetchedAt" DESC,
+        "score" DESC
+      LIMIT ${maxItems}
+    `,
+  );
+
+  const ids = idRows.map((r) => r.id);
+  if (ids.length === 0) {
+    return [];
+  }
+
+  const articles = await prisma.article.findMany({
+    where: { id: { in: ids } },
+    include: { source: true },
+  });
+
+  const rank = new Map(ids.map((id, index) => [id, index]));
+  articles.sort((a, b) => (rank.get(a.id) ?? 0) - (rank.get(b.id) ?? 0));
+
+  return articles;
+}
+
+function whyMissing(a: { whyImportant: string | null }): boolean {
+  return normalizeOptionalDbText(a.whyImportant) === null;
+}
+
+function logPendingBatchMeta(pending: Awaited<ReturnType<typeof fetchPendingArticlesOrdered>>) {
+  const n = pending.length;
+  const firstFetchedAt = pending[0]?.fetchedAt ?? null;
+  const hasWhyGap = pending.some(whyMissing);
+  console.log(
+    `[SUMMARIZE] batch size=${n} firstFetchedAt=${firstFetchedAt?.toISOString() ?? "n/a"} hasWhyImportantGap=${hasWhyGap}`,
+  );
 }
 
 export async function summarizePendingArticles(maxItems = 100) {
   const env = getEnv();
 
-  const pending = await prisma.article.findMany({
-    where: pendingWhereClause(),
-    include: { source: true },
-    orderBy: { fetchedAt: "desc" },
-    take: maxItems,
-  });
+  const pending = await fetchPendingArticlesOrdered(maxItems);
 
   console.log(`[SUMMARIZE] queued=${pending.length}`);
+  logPendingBatchMeta(pending);
 
   const writeFallbacks = async (article: {
     id: string;
@@ -64,11 +103,16 @@ export async function summarizePendingArticles(maxItems = 100) {
     summaryAi: string | null;
     whyImportant: string | null;
   }) => {
+    const summaryAi =
+      normalizeOptionalDbText(ensureSummaryAi(article, undefined)) ?? fallbackSummaryAiText(article.summaryRaw);
+    const whyImportant =
+      normalizeOptionalDbText(ensureWhyImportant(article.whyImportant)) ?? PERSISTED_WHY_FALLBACK;
+
     await prisma.article.update({
       where: { id: article.id },
       data: {
-        summaryAi: ensureSummaryAi(article, undefined),
-        whyImportant: ensureWhyImportant(article.whyImportant),
+        summaryAi,
+        whyImportant,
       },
     });
   };
@@ -141,11 +185,16 @@ export async function summarizePendingArticles(maxItems = 100) {
 
         const merged = mergeSummarizeFields(article, partial.data);
 
+        const summaryAi =
+          normalizeOptionalDbText(merged.summaryAi) ?? fallbackSummaryAiText(article.summaryRaw);
+        const whyImportant =
+          normalizeOptionalDbText(merged.whyImportant) ?? PERSISTED_WHY_FALLBACK;
+
         await prisma.article.update({
           where: { id: article.id },
           data: {
-            summaryAi: merged.summaryAi,
-            whyImportant: merged.whyImportant,
+            summaryAi,
+            whyImportant,
           },
         });
 
