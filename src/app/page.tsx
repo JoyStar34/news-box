@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Category } from "@prisma/client";
+import { TopOpportunitySection } from "@/components/TopOpportunitySection";
 import { DISPLAY_SUMMARY_FALLBACK, DISPLAY_WHY_FALLBACK } from "@/lib/articleDisplayDefaults";
 import { getTimeLabel } from "@/lib/articleTimeLabels";
 import { prisma } from "@/lib/prisma";
@@ -271,6 +272,7 @@ export default async function Home({
               <p className="mt-2 rounded-lg bg-zinc-100 p-2 text-xs text-zinc-700">
                 为什么重要：{article.whyImportant?.trim() || DISPLAY_WHY_FALLBACK}
               </p>
+              <TopOpportunitySection article={article} />
               <Link className="mt-3 inline-block text-sm text-blue-600 hover:underline" href={article.url} target="_blank">
                 阅读原文
               </Link>

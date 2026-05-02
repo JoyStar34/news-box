@@ -2,6 +2,7 @@ import OpenAI from "openai";
 import { subDays, subHours } from "date-fns";
 import { prisma } from "@/lib/prisma";
 import { logOpenAiLatency, logOpenAiUsage } from "@/lib/openaiObservability";
+import { appendOpportunityJson, generateOpportunityLayerForTopArticles } from "@/server/brief/opportunityLayer";
 import { getEnv } from "@/server/config/env";
 import type { Article, Source } from "@prisma/client";
 
@@ -156,6 +157,18 @@ ${list}`;
     } catch (err) {
       console.error(`[ERROR][DAILY_TOP]`, err);
       // keep body as title list
+    }
+  }
+
+  if (env.OPENAI_API_KEY && chosen.length > 0) {
+    try {
+      const openai = new OpenAI({ apiKey: env.OPENAI_API_KEY, baseURL: env.OPENAI_BASE_URL });
+      const opMap = await generateOpportunityLayerForTopArticles(openai, env.OPENAI_MODEL, chosen);
+      if (Object.keys(opMap).length > 0) {
+        body = appendOpportunityJson(body, opMap);
+      }
+    } catch (err) {
+      console.error(`[ERROR][DAILY_TOP] opportunity layer`, err);
     }
   }
 

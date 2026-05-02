@@ -7,7 +7,10 @@ type UsageLike = {
   output_tokens?: number;
 };
 
-export function logOpenAiLatency(tag: "[SCORE]" | "[SUMMARIZE]" | "[DAILY_TOP]", startMs: number) {
+export function logOpenAiLatency(
+  tag: "[SCORE]" | "[SUMMARIZE]" | "[DAILY_TOP]" | "[OPPORTUNITY_LAYER]",
+  startMs: number,
+) {
   console.log(`${tag} openai_latency_ms=`, Date.now() - startMs);
 }
 

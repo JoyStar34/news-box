@@ -1,13 +1,18 @@
 import { subHours } from "date-fns";
 import { prisma } from "@/lib/prisma";
 import type { Article, Source } from "@prisma/client";
+import {
+  mergeOpportunityIntoArticles,
+  stripOpportunityFromBody,
+  type ArticleOpportunityFields,
+} from "@/server/brief/opportunityLayer";
 
 export type ArticleWithSource = Article & { source: Source };
 
-/** Homepage Top 3 row: optional UX flags (API may omit). */
+/** Homepage Top 3 row: optional UX flags + opportunity layer (runtime only). */
 export type TopBriefArticle = ArticleWithSource & {
   repeatFromYesterday?: boolean;
-};
+} & ArticleOpportunityFields;
 
 function utcDayStart(d: Date = new Date()): Date {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
@@ -27,6 +32,15 @@ export async function getYesterdayTopArticleIds(): Promise<Set<string>> {
     include: { items: { select: { articleId: true } } },
   });
   return new Set(brief?.items.map((i) => i.articleId) ?? []);
+}
+
+/** Raw DailyBrief.body for today (includes embedded opportunity JSON). */
+export async function getTodayDailyBriefBody(): Promise<string | null> {
+  const brief = await prisma.dailyBrief.findUnique({
+    where: { briefDate: utcDayStart() },
+    select: { body: true },
+  });
+  return brief?.body ?? null;
 }
 
 export function attachRepeatFromYesterday<T extends ArticleWithSource>(
@@ -105,11 +119,17 @@ export async function buildDailyBriefFromStore(): Promise<DailyBriefResult> {
   const rawItems: ArticleWithSource[] =
     brief?.items.map((i) => ({ ...i.article, source: i.article.source })) ?? (await getDailyTopArticles());
 
-  const items: TopBriefArticle[] = attachRepeatFromYesterday(rawItems, yesterdayIds);
+  const items: TopBriefArticle[] = mergeOpportunityIntoArticles(
+    attachRepeatFromYesterday(rawItems, yesterdayIds),
+    brief?.body,
+  );
 
   const emptyCopy = "当前暂无重要新闻，稍后更新";
 
-  const text = brief?.body ?? (items.length ? items.map((item, idx) => `${idx + 1}. ${item.title}`).join("\n") : emptyCopy);
+  const rawBriefDisplay = brief?.body ? stripOpportunityFromBody(brief.body) : null;
+  const text =
+    rawBriefDisplay ??
+    (items.length ? items.map((item, idx) => `${idx + 1}. ${item.title}`).join("\n") : emptyCopy);
 
   return {
     title: "Today in Science",
