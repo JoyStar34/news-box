@@ -28,8 +28,15 @@ const rangeOptions: Array<{ label: string; value: RangeKey }> = [
 ];
 
 const sortOptions: Array<{ label: string; value: SortKey }> = [
-  { label: "最新", value: "latest" },
-  { label: "最重要", value: "top" },
+  { label: "最新信号", value: "latest" },
+  { label: "机会优先", value: "top" },
+];
+
+const radarLanes = [
+  { label: "产品化窗口", text: "能被小团队快速包装成工具、插件或自动化服务的变化。", tone: "border-emerald-500" },
+  { label: "内容红利", text: "适合拆解、教程、案例库、榜单和垂直社群的早期话题。", tone: "border-sky-500" },
+  { label: "技术迁移", text: "模型、框架、论文和开源项目带来的能力跃迁。", tone: "border-violet-500" },
+  { label: "平台风险", text: "价格、政策、接口、版权和生态格局变化带来的调整窗口。", tone: "border-amber-500" },
 ];
 
 function buildRangeDate(range: string | undefined): Date | null {
@@ -63,6 +70,10 @@ function formatDate(date: Date | null): string {
     hour: "2-digit",
     minute: "2-digit",
   }).format(date);
+}
+
+function categoryLabel(category: Category): string {
+  return categoryOptions.find((option) => option.value === category)?.label ?? category;
 }
 
 function buildPageHref(
@@ -103,8 +114,7 @@ function buildRangeHref(range: string, category: string | undefined, sort: strin
   if (category) params.set("category", category);
   if (sort) params.set("sort", sort);
   if (sourceId) params.set("source", sourceId);
-  const query = params.toString();
-  return `/?${query}`;
+  return `/?${params.toString()}`;
 }
 
 function buildSortHref(sort: string, category: string | undefined, range: string | undefined, sourceId: string | undefined) {
@@ -113,8 +123,7 @@ function buildSortHref(sort: string, category: string | undefined, range: string
   if (category) params.set("category", category);
   if (range) params.set("range", range);
   if (sourceId) params.set("source", sourceId);
-  const query = params.toString();
-  return `/?${query}`;
+  return `/?${params.toString()}`;
 }
 
 function buildSourceHref(
@@ -154,12 +163,8 @@ export default async function Home({
     categoryParam && Object.values(Category).includes(categoryParam as Category)
       ? { category: categoryParam as Category }
       : {};
-  if (sourceParam) {
-    where.sourceId = sourceParam;
-  }
-  if (rangeStart) {
-    where.fetchedAt = { gte: rangeStart };
-  }
+  if (sourceParam) where.sourceId = sourceParam;
+  if (rangeStart) where.fetchedAt = { gte: rangeStart };
 
   const countWhere: {
     fetchedAt?: { gte: Date };
@@ -195,14 +200,14 @@ export default async function Home({
   ]);
 
   const top = briefData.items;
-  const brief = { title: briefData.title, text: briefData.text };
-
+  const brief = { title: "今日机会雷达", text: briefData.text };
   const sourceIds = sourceGrouped.map((item) => item.sourceId);
   const sourceRecords = sourceIds.length
     ? await prisma.source.findMany({
         where: { id: { in: sourceIds } },
       })
     : [];
+
   const sourceNameMap = new Map(sourceRecords.map((source) => [source.id, source.name]));
   const sourceOptions = [
     { id: "ALL", name: "全部来源", count: sourceGrouped.reduce((sum, item) => sum + item._count.sourceId, 0) },
@@ -229,166 +234,268 @@ export default async function Home({
   });
   const hasPrev = safePage > 1;
   const hasNext = safePage < totalPages;
+  const highOpportunityCount = top.filter((article) => (article.opportunityScore ?? 0) >= 4).length;
 
   return (
-    <main className="mx-auto w-full max-w-5xl px-6 py-10">
-      <header className="mb-8">
-        <h1 className="text-3xl font-bold">News Box</h1>
-        <p className="mt-2 text-sm text-zinc-600">
-          全球科技、AI、科学与天文学新闻聚合，自动生成摘要和每日重点。
-        </p>
-      </header>
+    <main className="min-h-screen bg-[#f7f8f4] text-zinc-950">
+      <div className="mx-auto w-full max-w-6xl px-5 py-6 sm:px-8 lg:px-10">
+        <header className="flex flex-wrap items-center justify-between gap-4 border-b border-zinc-200 pb-5">
+          <Link href="/" className="text-sm font-semibold tracking-[0.16em] text-zinc-900">
+            AI 机会雷达
+          </Link>
+          <nav className="flex flex-wrap items-center gap-2 text-sm">
+            <a className="rounded-md px-3 py-2 text-zinc-700 hover:bg-white" href="#radar">
+              今日雷达
+            </a>
+            <a className="rounded-md px-3 py-2 text-zinc-700 hover:bg-white" href="#signals">
+              信号流
+            </a>
+            <a
+              className="rounded-md bg-zinc-950 px-3 py-2 font-semibold text-white hover:bg-zinc-800"
+              href="mailto:hello@newsbox.ai?subject=申请开通 AI 机会雷达 Pro"
+            >
+              开通 Pro
+            </a>
+          </nav>
+        </header>
 
-      <section className="mb-10 rounded-xl border p-6">
-        <h2 className="text-xl font-semibold">Today in Science</h2>
-        <p className="mt-3 whitespace-pre-line text-sm text-zinc-700">{brief.text}</p>
-      </section>
+        <section className="grid gap-8 py-10 lg:grid-cols-[1.05fr_0.95fr] lg:items-end">
+          <div>
+            <p className="text-sm font-semibold uppercase tracking-[0.18em] text-emerald-700">from news aggregator to opportunity radar</p>
+            <h1 className="mt-4 max-w-3xl text-4xl font-semibold leading-tight tracking-normal text-zinc-950 sm:text-5xl">
+              把 AI 新闻变成可下注的机会清单
+            </h1>
+            <p className="mt-5 max-w-2xl text-base leading-8 text-zinc-600">
+              每天扫描全球 AI、科技、论文和产品动态，优先呈现能转化为产品、内容、自动化服务或投资研究线索的信号。
+            </p>
+          </div>
 
-      <section className="mb-10">
-        <h2 className="mb-4 text-xl font-semibold">过去 24 小时最重要</h2>
-        {top.length === 0 ? (
-          <p className="text-sm text-zinc-600">当前暂无重要新闻，稍后更新</p>
-        ) : (
-        <div className="grid gap-4 md:grid-cols-3">
-          {top.map((article) => (
-            <article key={article.id} className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-800">
-                  {getTimeLabel(article)}
-                </span>
-                {article.repeatFromYesterday ? (
-                  <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-900">
-                    连续上榜
-                  </span>
-                ) : null}
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm">
+              <p className="text-xs font-medium text-zinc-500">当前窗口</p>
+              <p className="mt-2 text-3xl font-semibold">{effectiveRange}</p>
+            </div>
+            <div className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm">
+              <p className="text-xs font-medium text-zinc-500">已捕捉信号</p>
+              <p className="mt-2 text-3xl font-semibold">{allCount}</p>
+            </div>
+            <div className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm">
+              <p className="text-xs font-medium text-zinc-500">今日重点机会</p>
+              <p className="mt-2 text-3xl font-semibold">{top.length}</p>
+            </div>
+            <div className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm">
+              <p className="text-xs font-medium text-zinc-500">高机会指数</p>
+              <p className="mt-2 text-3xl font-semibold">{highOpportunityCount || "Pro"}</p>
+            </div>
+          </div>
+        </section>
+
+        <section id="radar" className="grid gap-5 lg:grid-cols-[0.9fr_1.1fr]">
+          <div className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-xl font-semibold">{brief.title}</h2>
+              <span className="rounded-md bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-800">Daily</span>
+            </div>
+            <p className="mt-4 whitespace-pre-line text-sm leading-7 text-zinc-700">{brief.text}</p>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            {radarLanes.map((lane) => (
+              <div key={lane.label} className={`rounded-lg border border-zinc-200 bg-white p-4 shadow-sm ${lane.tone} border-l-4`}>
+                <h3 className="text-sm font-semibold text-zinc-950">{lane.label}</h3>
+                <p className="mt-2 text-sm leading-6 text-zinc-600">{lane.text}</p>
               </div>
-              <p className="mt-2 text-xs text-zinc-500">
-                {article.source.name} · {article.category} · {formatDate(article.publishedAt)}
-              </p>
-              <h3 className="mt-2 font-semibold leading-6">{article.title}</h3>
-              <p className="mt-2 line-clamp-5 text-sm text-zinc-700">
-                {article.summaryAi?.trim() || article.summaryRaw?.trim() || DISPLAY_SUMMARY_FALLBACK}
-              </p>
-              <p className="mt-2 rounded-lg bg-zinc-100 p-2 text-xs text-zinc-700">
-                为什么重要：{article.whyImportant?.trim() || DISPLAY_WHY_FALLBACK}
-              </p>
-              <TopOpportunitySection article={article} />
-              <Link className="mt-3 inline-block text-sm text-blue-600 hover:underline" href={article.url} target="_blank">
-                阅读原文
-              </Link>
-            </article>
-          ))}
-        </div>
-        )}
-      </section>
+            ))}
+          </div>
+        </section>
 
-      <section>
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-xl font-semibold">最新新闻</h2>
-          <div className="flex flex-wrap gap-2">
-            {sortOptions.map((option) => {
-              const active = effectiveSort === option.value;
+        <section className="py-10">
+          <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold uppercase tracking-[0.16em] text-zinc-500">opportunity board</p>
+              <h2 className="mt-2 text-2xl font-semibold">今日机会榜</h2>
+            </div>
+            <a
+              href="mailto:hello@newsbox.ai?subject=申请接收 AI 机会雷达样刊"
+              className="rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-semibold text-zinc-800 hover:border-zinc-950"
+            >
+              索取样刊
+            </a>
+          </div>
+
+          {top.length === 0 ? (
+            <p className="rounded-lg border border-zinc-200 bg-white p-5 text-sm text-zinc-600">当前暂无高价值信号，稍后更新。</p>
+          ) : (
+            <div className="grid gap-4 lg:grid-cols-3">
+              {top.map((article, index) => (
+                <article key={article.id} className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="rounded-md bg-zinc-950 px-2 py-1 text-xs font-semibold text-white">#{index + 1}</span>
+                    <span className="rounded-md bg-sky-50 px-2 py-1 text-xs font-medium text-sky-800">{getTimeLabel(article)}</span>
+                    {article.repeatFromYesterday ? (
+                      <span className="rounded-md bg-amber-50 px-2 py-1 text-xs font-medium text-amber-900">连续上榜</span>
+                    ) : null}
+                  </div>
+                  <p className="mt-4 text-xs text-zinc-500">
+                    {article.source.name} · {categoryLabel(article.category)} · {formatDate(article.publishedAt ?? article.fetchedAt)}
+                  </p>
+                  <h3 className="mt-2 text-lg font-semibold leading-7">{article.title}</h3>
+                  <p className="mt-3 line-clamp-5 text-sm leading-6 text-zinc-700">
+                    {article.summaryAi?.trim() || article.summaryRaw?.trim() || DISPLAY_SUMMARY_FALLBACK}
+                  </p>
+                  <p className="mt-4 border-l-2 border-zinc-300 pl-3 text-xs leading-5 text-zinc-600">
+                    重要性：{article.whyImportant?.trim() || DISPLAY_WHY_FALLBACK}
+                  </p>
+                  <TopOpportunitySection article={article} />
+                  <Link className="mt-4 inline-block text-sm font-semibold text-emerald-700 hover:text-emerald-900" href={article.url} target="_blank">
+                    查看证据源
+                  </Link>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
+
+        <section className="mb-10 rounded-lg border border-zinc-900 bg-zinc-950 p-6 text-white">
+          <div className="grid gap-6 lg:grid-cols-[1fr_0.8fr] lg:items-center">
+            <div>
+              <p className="text-sm font-semibold uppercase tracking-[0.16em] text-emerald-300">pro model</p>
+              <h2 className="mt-3 text-2xl font-semibold">付费版卖的是“下一步”，不是更多新闻</h2>
+              <p className="mt-4 max-w-2xl text-sm leading-7 text-zinc-300">
+                Pro 把信号进一步拆成机会指数、可执行动作、适合人群、时间窗口和风险提示，适合独立开发者、内容团队、研究员和 AI 产品负责人。
+              </p>
+            </div>
+            <div className="grid gap-2 text-sm text-zinc-200">
+              <div className="flex items-center justify-between border-b border-white/15 py-2">
+                <span>每日 Top 3 机会拆解</span>
+                <span className="font-semibold text-white">Pro</span>
+              </div>
+              <div className="flex items-center justify-between border-b border-white/15 py-2">
+                <span>按行业/角色订阅提醒</span>
+                <span className="font-semibold text-white">Pro</span>
+              </div>
+              <div className="flex items-center justify-between py-2">
+                <span>周报与复盘数据</span>
+                <span className="font-semibold text-white">Pro</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="signals" className="pb-12">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold uppercase tracking-[0.16em] text-zinc-500">evidence stream</p>
+              <h2 className="mt-2 text-2xl font-semibold">实时信号流</h2>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {sortOptions.map((option) => {
+                const active = effectiveSort === option.value;
+                return (
+                  <Link
+                    key={option.value}
+                    href={buildSortHref(option.value, categoryParam, effectiveRange, sourceParam)}
+                    className={`rounded-md border px-3 py-2 text-xs font-semibold ${
+                      active ? "border-zinc-950 bg-zinc-950 text-white" : "border-zinc-300 bg-white text-zinc-700 hover:border-zinc-950"
+                    }`}
+                  >
+                    {option.label}
+                  </Link>
+                );
+              })}
+              {rangeOptions.map((option) => {
+                const active = effectiveRange === option.value;
+                return (
+                  <Link
+                    key={option.value}
+                    href={buildRangeHref(option.value, categoryParam, effectiveSort, sourceParam)}
+                    className={`rounded-md border px-3 py-2 text-xs font-semibold ${
+                      active ? "border-emerald-700 bg-emerald-700 text-white" : "border-zinc-300 bg-white text-zinc-700 hover:border-emerald-700"
+                    }`}
+                  >
+                    {option.label}
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="mb-4 flex flex-wrap gap-2">
+            {categoryOptions.map((option) => {
+              const active = (option.value === "ALL" && !categoryParam) || option.value === categoryParam;
+              const count = option.value === "ALL" ? allCount : (categoryCountMap.get(option.value) ?? 0);
               return (
                 <Link
                   key={option.value}
-                  href={buildSortHref(option.value, categoryParam, effectiveRange, sourceParam)}
-                  className={`rounded-full border px-3 py-1 text-xs ${
-                    active ? "border-zinc-900 bg-zinc-900 text-white" : "border-zinc-300 text-zinc-700 hover:bg-zinc-100"
+                  href={buildCategoryHref(option.value, effectiveRange, effectiveSort, sourceParam)}
+                  className={`rounded-md border px-3 py-2 text-xs font-semibold ${
+                    active ? "border-zinc-950 bg-zinc-950 text-white" : "border-zinc-300 bg-white text-zinc-700 hover:border-zinc-950"
                   }`}
                 >
-                  排序：{option.label}
-                </Link>
-              );
-            })}
-            {rangeOptions.map((option) => {
-              const active = effectiveRange === option.value;
-              return (
-                <Link
-                  key={option.value}
-                  href={buildRangeHref(option.value, categoryParam, effectiveSort, sourceParam)}
-                  className={`rounded-full border px-3 py-1 text-xs ${
-                    active ? "border-blue-600 bg-blue-600 text-white" : "border-zinc-300 text-zinc-700 hover:bg-zinc-100"
-                  }`}
-                >
-                  {option.label}
+                  {option.label} ({count})
                 </Link>
               );
             })}
           </div>
-        </div>
-        <div className="mb-4 flex flex-wrap gap-2">
-          {categoryOptions.map((option) => {
-            const active = (option.value === "ALL" && !categoryParam) || option.value === categoryParam;
-            const count = option.value === "ALL" ? allCount : (categoryCountMap.get(option.value) ?? 0);
-            return (
-              <Link
-                key={option.value}
-                href={buildCategoryHref(option.value, effectiveRange, effectiveSort, sourceParam)}
-                className={`rounded-full border px-3 py-1 text-xs ${
-                  active ? "border-zinc-900 bg-zinc-900 text-white" : "border-zinc-300 text-zinc-700 hover:bg-zinc-100"
-                }`}
-              >
-                {option.label} ({count})
-              </Link>
-            );
-          })}
-        </div>
 
-        <div className="mb-4 flex flex-wrap gap-2">
-          {sourceOptions.map((option) => {
-            const active = (option.id === "ALL" && !sourceParam) || option.id === sourceParam;
-            return (
-              <Link
-                key={option.id}
-                href={buildSourceHref(option.id, categoryParam, effectiveRange, effectiveSort)}
-                className={`rounded-full border px-3 py-1 text-xs ${
-                  active ? "border-emerald-700 bg-emerald-700 text-white" : "border-zinc-300 text-zinc-700 hover:bg-zinc-100"
-                }`}
-              >
-                {option.name} ({option.count})
-              </Link>
-            );
-          })}
-        </div>
-        <div className="space-y-3">
-          {latest.map((article) => (
-            <article key={article.id} className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
-              <p className="text-xs text-zinc-500">
-                {article.source.name} · {article.category} · {formatDate(article.publishedAt ?? article.fetchedAt)}
-              </p>
-              <h3 className="mt-1 font-semibold">{article.title}</h3>
-              <p className="mt-2 line-clamp-4 text-sm text-zinc-700">
-                {article.summaryAi?.trim() || article.summaryRaw?.trim() || DISPLAY_SUMMARY_FALLBACK}
-              </p>
-              <p className="mt-2 rounded-lg bg-zinc-100 p-2 text-xs text-zinc-700">
-                为什么重要：{article.whyImportant?.trim() || DISPLAY_WHY_FALLBACK}
-              </p>
-              <Link className="mt-2 inline-block text-sm text-blue-600 hover:underline" href={article.url} target="_blank">
-                原文链接
-              </Link>
-            </article>
-          ))}
-        </div>
-        <div className="mt-6 flex items-center justify-between">
-          <p className="text-sm text-zinc-600">
-            第 {safePage} / {totalPages} 页，共 {total} 条
-          </p>
-          <div className="flex gap-2">
-            <Link
-              href={buildPageHref(Math.max(1, safePage - 1), categoryParam, effectiveRange, effectiveSort, sourceParam)}
-              className={`rounded-lg border px-3 py-1 text-sm ${hasPrev ? "hover:bg-zinc-100" : "pointer-events-none opacity-40"}`}
-            >
-              上一页
-            </Link>
-            <Link
-              href={buildPageHref(safePage + 1, categoryParam, effectiveRange, effectiveSort, sourceParam)}
-              className={`rounded-lg border px-3 py-1 text-sm ${hasNext ? "hover:bg-zinc-100" : "pointer-events-none opacity-40"}`}
-            >
-              下一页
-            </Link>
+          <div className="mb-5 flex flex-wrap gap-2">
+            {sourceOptions.map((option) => {
+              const active = (option.id === "ALL" && !sourceParam) || option.id === sourceParam;
+              return (
+                <Link
+                  key={option.id}
+                  href={buildSourceHref(option.id, categoryParam, effectiveRange, effectiveSort)}
+                  className={`rounded-md border px-3 py-2 text-xs font-semibold ${
+                    active ? "border-sky-700 bg-sky-700 text-white" : "border-zinc-300 bg-white text-zinc-700 hover:border-sky-700"
+                  }`}
+                >
+                  {option.name} ({option.count})
+                </Link>
+              );
+            })}
           </div>
-        </div>
-      </section>
+
+          <div className="space-y-3">
+            {latest.map((article) => (
+              <article key={article.id} className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm">
+                <p className="text-xs text-zinc-500">
+                  {article.source.name} · {categoryLabel(article.category)} · {formatDate(article.publishedAt ?? article.fetchedAt)}
+                </p>
+                <h3 className="mt-2 font-semibold leading-6">{article.title}</h3>
+                <p className="mt-2 line-clamp-3 text-sm leading-6 text-zinc-700">
+                  {article.summaryAi?.trim() || article.summaryRaw?.trim() || DISPLAY_SUMMARY_FALLBACK}
+                </p>
+                <p className="mt-3 border-l-2 border-zinc-300 pl-3 text-xs leading-5 text-zinc-600">
+                  重要性：{article.whyImportant?.trim() || DISPLAY_WHY_FALLBACK}
+                </p>
+                <Link className="mt-3 inline-block text-sm font-semibold text-emerald-700 hover:text-emerald-900" href={article.url} target="_blank">
+                  原文链接
+                </Link>
+              </article>
+            ))}
+          </div>
+
+          <div className="mt-6 flex items-center justify-between gap-3">
+            <p className="text-sm text-zinc-600">
+              第 {safePage} / {totalPages} 页，共 {total} 条
+            </p>
+            <div className="flex gap-2">
+              <Link
+                href={buildPageHref(Math.max(1, safePage - 1), categoryParam, effectiveRange, effectiveSort, sourceParam)}
+                className={`rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-semibold ${hasPrev ? "hover:border-zinc-950" : "pointer-events-none opacity-40"}`}
+              >
+                上一页
+              </Link>
+              <Link
+                href={buildPageHref(safePage + 1, categoryParam, effectiveRange, effectiveSort, sourceParam)}
+                className={`rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-semibold ${hasNext ? "hover:border-zinc-950" : "pointer-events-none opacity-40"}`}
+              >
+                下一页
+              </Link>
+            </div>
+          </div>
+        </section>
+      </div>
     </main>
   );
 }

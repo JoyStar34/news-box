@@ -99,7 +99,7 @@ export type DailyBriefResult = {
 };
 
 /**
- * Body text + top items for "Today in Science" panel.
+ * Body text + top items for the homepage radar panel.
  */
 export async function buildDailyBriefFromStore(): Promise<DailyBriefResult> {
   const day = utcDayStart();
@@ -124,7 +124,7 @@ export async function buildDailyBriefFromStore(): Promise<DailyBriefResult> {
     brief?.body,
   );
 
-  const emptyCopy = "当前暂无重要新闻，稍后更新";
+  const emptyCopy = "当前暂无高价值信号，稍后更新。";
 
   const rawBriefDisplay = brief?.body ? stripOpportunityFromBody(brief.body) : null;
   const text =
@@ -132,7 +132,7 @@ export async function buildDailyBriefFromStore(): Promise<DailyBriefResult> {
     (items.length ? items.map((item, idx) => `${idx + 1}. ${item.title}`).join("\n") : emptyCopy);
 
   return {
-    title: "Today in Science",
+    title: "今日机会雷达",
     text,
     items,
   };

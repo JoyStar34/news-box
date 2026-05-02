@@ -72,7 +72,8 @@ export async function generateDailyTopNews(): Promise<{
   });
 
   const stripAdj = (a: WithAdj): WithSource => {
-    const { adjustedScore: _, ...rest } = a;
+    const { adjustedScore, ...rest } = a;
+    void adjustedScore;
     return rest;
   };
 
