@@ -97,6 +97,8 @@ export type DailyBriefResult = {
 
 /**
  * Body text + top items for "Today in Science" panel.
+ *
+ * `DailyBrief.body` 的前半段纯文本由 `generateDailyBrief`（`dailyTopJob` → `dailyBriefGenerator`）在落库时生成；此处仅读取并剥离机会层 JSON。
  */
 export async function buildDailyBriefFromStore(): Promise<DailyBriefResult> {
   const day = utcDayStart();
