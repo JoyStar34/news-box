@@ -1,7 +1,13 @@
 import Link from "next/link";
 import { Category } from "@prisma/client";
 import { TopOpportunitySection } from "@/components/TopOpportunitySection";
-import { DISPLAY_SUMMARY_FALLBACK, DISPLAY_WHY_FALLBACK } from "@/lib/articleDisplayDefaults";
+import {
+  DISPLAY_SUMMARY_FALLBACK,
+  DISPLAY_WHY_FALLBACK,
+  formatNumberedTodayInScienceLines,
+  isNumberedTitleOnlyBriefText,
+  pickArticleSummaryDisplay,
+} from "@/lib/articleDisplayDefaults";
 import { getTimeLabel } from "@/lib/articleTimeLabels";
 import { prisma } from "@/lib/prisma";
 import { buildDailyBriefFromStore } from "@/server/brief/dailyBriefService";
@@ -195,7 +201,14 @@ export default async function Home({
   ]);
 
   const top = briefData.items;
-  const brief = { title: briefData.title, text: briefData.text };
+  const todayInScienceText = (() => {
+    const trimmed = briefData.text.replace(/\r\n/g, "\n").trim();
+    if (top.length > 0 && trimmed && isNumberedTitleOnlyBriefText(briefData.text, top)) {
+      return formatNumberedTodayInScienceLines(top) || trimmed;
+    }
+    if (trimmed) return briefData.text;
+    return formatNumberedTodayInScienceLines(top) || DISPLAY_SUMMARY_FALLBACK;
+  })();
 
   const sourceIds = sourceGrouped.map((item) => item.sourceId);
   const sourceRecords = sourceIds.length
@@ -241,7 +254,7 @@ export default async function Home({
 
       <section className="mb-10 rounded-xl border p-6">
         <h2 className="text-xl font-semibold">Today in Science</h2>
-        <p className="mt-3 whitespace-pre-line text-sm text-zinc-700">{brief.text}</p>
+        <p className="mt-3 whitespace-pre-line text-sm text-zinc-700">{todayInScienceText}</p>
       </section>
 
       <section className="mb-10">
@@ -267,7 +280,7 @@ export default async function Home({
               </p>
               <h3 className="mt-2 font-semibold leading-6">{article.title}</h3>
               <p className="mt-2 line-clamp-5 text-sm text-zinc-700">
-                {article.summaryAi?.trim() || article.summaryRaw?.trim() || DISPLAY_SUMMARY_FALLBACK}
+                {pickArticleSummaryDisplay(article)}
               </p>
               <p className="mt-2 rounded-lg bg-zinc-100 p-2 text-xs text-zinc-700">
                 为什么重要：{article.whyImportant?.trim() || DISPLAY_WHY_FALLBACK}
@@ -358,7 +371,7 @@ export default async function Home({
               </p>
               <h3 className="mt-1 font-semibold">{article.title}</h3>
               <p className="mt-2 line-clamp-4 text-sm text-zinc-700">
-                {article.summaryAi?.trim() || article.summaryRaw?.trim() || DISPLAY_SUMMARY_FALLBACK}
+                {pickArticleSummaryDisplay(article)}
               </p>
               <p className="mt-2 rounded-lg bg-zinc-100 p-2 text-xs text-zinc-700">
                 为什么重要：{article.whyImportant?.trim() || DISPLAY_WHY_FALLBACK}

@@ -21,3 +21,34 @@ export function fallbackSummaryAiText(summaryRaw: string | null | undefined): st
   const t = summaryRaw?.trim();
   return t || DISPLAY_SUMMARY_FALLBACK;
 }
+
+/** UI line for an article: AI summary → raw excerpt → title → placeholder (never blank). */
+export function pickArticleSummaryDisplay(article: {
+  title: string;
+  summaryAi?: string | null;
+  summaryRaw?: string | null;
+}): string {
+  const ai = article.summaryAi?.trim();
+  if (ai) return ai;
+  const raw = article.summaryRaw?.trim();
+  if (raw) return raw;
+  const t = article.title?.trim();
+  if (t) return t;
+  return DISPLAY_SUMMARY_FALLBACK;
+}
+
+/** Numbered block for Today in Science when driven by top articles (not persisted brief prose). */
+export function formatNumberedTodayInScienceLines<
+  T extends { title: string; summaryAi?: string | null; summaryRaw?: string | null },
+>(items: T[]): string {
+  if (items.length === 0) return "";
+  return items.map((item, idx) => `${idx + 1}. ${pickArticleSummaryDisplay(item)}`).join("\n");
+}
+
+/** True when `text` is exactly the server’s title-list fallback for these items. */
+export function isNumberedTitleOnlyBriefText(text: string, items: Array<{ title: string }>): boolean {
+  if (items.length === 0) return false;
+  const norm = (s: string) => s.replace(/\r\n/g, "\n").trim();
+  const titleBlock = items.map((item, idx) => `${idx + 1}. ${item.title.trim()}`).join("\n");
+  return norm(text) === norm(titleBlock);
+}
