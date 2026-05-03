@@ -2,15 +2,17 @@ import type OpenAI from "openai";
 import { z } from "zod";
 import type { Article, Source } from "@prisma/client";
 import { logOpenAiLatency, logOpenAiUsage } from "@/lib/openaiObservability";
+import {
+  OPPORTUNITY_JSON_END as OP_END,
+  OPPORTUNITY_JSON_START as OP_START,
+  stripOpportunityJson,
+} from "@/lib/parse";
 
 export type ArticleOpportunityFields = {
   opportunityScore?: number;
   opportunitySummary?: string;
   actionIdeas?: string[];
 };
-
-const OP_START = "[[OPPORTUNITY_JSON]]";
-const OP_END = "[[/OPPORTUNITY_JSON]]";
 
 const oneArticleSchema = z.object({
   opportunityScore: z.number(),
@@ -23,9 +25,7 @@ const bundleSchema = z.object({
 });
 
 export function stripOpportunityFromBody(body: string): string {
-  const i = body.indexOf(OP_START);
-  if (i === -1) return body.trimEnd();
-  return body.slice(0, i).trimEnd();
+  return stripOpportunityJson(body);
 }
 
 export function parseOpportunityFromBody(body: string | null | undefined): Record<string, ArticleOpportunityFields> {

@@ -1,11 +1,8 @@
 import { subHours } from "date-fns";
 import { prisma } from "@/lib/prisma";
 import type { Article, Source } from "@prisma/client";
-import {
-  mergeOpportunityIntoArticles,
-  stripOpportunityFromBody,
-  type ArticleOpportunityFields,
-} from "@/server/brief/opportunityLayer";
+import { stripOpportunityJson } from "@/lib/parse";
+import { mergeOpportunityIntoArticles, type ArticleOpportunityFields } from "@/server/brief/opportunityLayer";
 
 export type ArticleWithSource = Article & { source: Source };
 
@@ -126,9 +123,8 @@ export async function buildDailyBriefFromStore(): Promise<DailyBriefResult> {
 
   const emptyCopy = "当前暂无重要新闻，稍后更新";
 
-  const rawBriefDisplay = brief?.body ? stripOpportunityFromBody(brief.body) : null;
   const text =
-    rawBriefDisplay ??
+    stripOpportunityJson(brief?.body) ||
     (items.length ? items.map((item, idx) => `${idx + 1}. ${item.title}`).join("\n") : emptyCopy);
 
   return {
