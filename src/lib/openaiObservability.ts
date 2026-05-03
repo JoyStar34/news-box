@@ -1,5 +1,13 @@
 /** Latency + token logs for OpenAI Responses API (also works with OpenRouter-style proxies). */
 
+export type OpenAiLatencyTag =
+  | "[SCORE]"
+  | "[SUMMARIZE]"
+  | "[DAILY_TOP]"
+  | "[OPPORTUNITY_LAYER]"
+  | "[DAILY_BRIEF_FLASH]"
+  | (string & {});
+
 type UsageLike = {
   prompt_tokens?: number;
   completion_tokens?: number;
@@ -7,10 +15,7 @@ type UsageLike = {
   output_tokens?: number;
 };
 
-export function logOpenAiLatency(
-  tag: "[SCORE]" | "[SUMMARIZE]" | "[DAILY_TOP]" | "[OPPORTUNITY_LAYER]",
-  startMs: number,
-) {
+export function logOpenAiLatency(tag: OpenAiLatencyTag, startMs: number) {
   console.log(`${tag} openai_latency_ms=`, Date.now() - startMs);
 }
 
