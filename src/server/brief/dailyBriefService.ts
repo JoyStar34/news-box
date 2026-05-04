@@ -38,6 +38,46 @@ export function attachRepeatFromYesterday<T extends ArticleWithSource>(
   );
 }
 
+function blurbFromArticle(item: ArticleWithSource): string {
+  return (
+    item.summaryAi?.trim() ||
+    item.whyImportant?.trim() ||
+    item.summaryRaw?.trim() ||
+    item.title
+  ).trim();
+}
+
+/** When there is no AI brief body yet, show readable blurbs instead of bare titles. */
+export function buildFallbackBriefText(items: ArticleWithSource[]): string {
+  return items.map((item, idx) => `${idx + 1}. ${blurbFromArticle(item)}`).join("\n\n");
+}
+
+/**
+ * Turn a one-line Chinese/Latin brief (e.g. "句一。句二。句三。") into spaced paragraphs for `whitespace-pre-line`.
+ * No-op if there are already blank-line breaks or fewer than 2 detected sentences.
+ */
+export function formatBriefTextForDisplay(raw: string): string {
+  const t = raw.trim();
+  if (!t || /\n{2,}/.test(t)) return t;
+
+  const sentenceLike = t.match(/[^。！？.!?]+(?:[。！？]|[.!?](?=\s|$))/g);
+  if (sentenceLike && sentenceLike.length >= 2) {
+    const consumed = sentenceLike.join("");
+    let out = sentenceLike.map((s) => s.trim()).join("\n\n");
+    const tail = t.slice(consumed.length).trim();
+    if (tail) out = `${out}\n\n${tail}`;
+    return out;
+  }
+
+  return t;
+}
+
+function isPersistedTitleListOnlyBody(body: string, items: ArticleWithSource[]): boolean {
+  if (!items.length) return false;
+  const expected = items.map((item, idx) => `${idx + 1}. ${item.title}`).join("\n");
+  return body.trim() === expected.trim();
+}
+
 /** Fallback when DailyBrief not yet generated: recent high-ranked articles only */
 export async function getFallbackTopArticles(): Promise<ArticleWithSource[]> {
   const since = subHours(new Date(), 24);
@@ -109,7 +149,17 @@ export async function buildDailyBriefFromStore(): Promise<DailyBriefResult> {
 
   const emptyCopy = "当前暂无重要新闻，稍后更新";
 
-  const text = brief?.body ?? (items.length ? items.map((item, idx) => `${idx + 1}. ${item.title}`).join("\n") : emptyCopy);
+  const storedBody = brief?.body?.trim() ?? "";
+  let text: string;
+  if (storedBody && !isPersistedTitleListOnlyBody(storedBody, items)) {
+    text = storedBody;
+  } else if (items.length) {
+    text = buildFallbackBriefText(items);
+  } else {
+    text = emptyCopy;
+  }
+
+  text = formatBriefTextForDisplay(text);
 
   return {
     title: "Today in Science",

@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { logOpenAiLatency, logOpenAiUsage } from "@/lib/openaiObservability";
 import { getEnv } from "@/server/config/env";
 import type { Article, Source } from "@prisma/client";
+import { formatBriefTextForDisplay } from "@/server/brief/dailyBriefService";
 
 function utcDayStart(d: Date = new Date()): Date {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
@@ -148,11 +149,12 @@ ${list}`;
       const completion = await openai.responses.create({
         model: env.OPENAI_MODEL,
         temperature: 0.2,
-        input: `Summarize these 3 scientific breakthroughs into a short daily brief (3 sentences, Chinese).\n${listText}`,
+        input: `Summarize these 3 scientific breakthroughs into a short daily brief in Chinese.\nRequirements:\n- Exactly 3 paragraphs (one story per paragraph).\n- Separate paragraphs with a single blank line (use two newline characters between paragraphs).\n- No numbering or bullet prefixes.\n\n${listText}`,
       });
       logOpenAiLatency("[DAILY_TOP]", startBrief);
       logOpenAiUsage(completion);
-      body = completion.output_text?.trim() || body;
+      const briefOut = completion.output_text?.trim();
+      body = briefOut ? formatBriefTextForDisplay(briefOut) : body;
     } catch (err) {
       console.error(`[ERROR][DAILY_TOP]`, err);
       // keep body as title list
