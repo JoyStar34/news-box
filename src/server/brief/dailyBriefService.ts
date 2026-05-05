@@ -80,12 +80,17 @@ function isPersistedTitleListOnlyBody(body: string, items: ArticleWithSource[]):
 
 /** Fallback when DailyBrief not yet generated: recent high-ranked articles only */
 export async function getFallbackTopArticles(): Promise<ArticleWithSource[]> {
-  const since = subHours(new Date(), 24);
+  const since = subHours(new Date(), 48);
   return prisma.article.findMany({
     where: {
       isRelevant: true,
       finalScore: { not: null },
-      fetchedAt: { gte: since },
+      OR: [
+        { publishedAt: { gte: since } },
+        {
+          AND: [{ publishedAt: null }, { fetchedAt: { gte: since } }],
+        },
+      ],
     },
     orderBy: [{ finalScore: "desc" }, { fetchedAt: "desc" }],
     take: 3,
@@ -94,7 +99,7 @@ export async function getFallbackTopArticles(): Promise<ArticleWithSource[]> {
 }
 
 /**
- * Top 3 for homepage and /api/top: today's DailyBrief items, else recent ranked articles (24h).
+ * Top 3 for homepage and /api/top: today's DailyBrief items, else recent ranked articles (48h).
  */
 export async function getDailyTopArticles(): Promise<ArticleWithSource[]> {
   const day = utcDayStart();

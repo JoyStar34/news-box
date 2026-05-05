@@ -15,7 +15,7 @@ function normalizeTitle(s: string): string {
 }
 
 /**
- * Pick top 3: pool by publishedAt (36h) / fetchedAt when unpublished (24h) →
+ * Pick top 3: pool by effective time in last 48h (publishedAt ?? fetchedAt) →
  * demote recent DailyBrief picks → top 10 by adjusted score → LLM picks 3 → persist.
  */
 export async function generateDailyTopNews(): Promise<{
@@ -27,8 +27,7 @@ export async function generateDailyTopNews(): Promise<{
   const env = getEnv();
   const now = new Date();
   const day = utcDayStart(now);
-  const cutoff36 = subHours(now, 36);
-  const cutoff24 = subHours(now, 24);
+  const cutoff48 = subHours(now, 48);
 
   type WithSource = Article & { source: Source };
 
@@ -37,9 +36,9 @@ export async function generateDailyTopNews(): Promise<{
       isRelevant: true,
       finalScore: { not: null },
       OR: [
-        { publishedAt: { gte: cutoff36 } },
+        { publishedAt: { gte: cutoff48 } },
         {
-          AND: [{ publishedAt: null }, { fetchedAt: { gte: cutoff24 } }],
+          AND: [{ publishedAt: null }, { fetchedAt: { gte: cutoff48 } }],
         },
       ],
     },
@@ -90,7 +89,7 @@ export async function generateDailyTopNews(): Promise<{
   if (env.OPENAI_API_KEY && candidates.length >= 1) {
     const openai = new OpenAI({ apiKey: env.OPENAI_API_KEY, baseURL: env.OPENAI_BASE_URL });
     const list = candidates.map((a, i) => `${i + 1}. ${a.title} (${a.source.name})`).join("\n");
-    const pickPrompt = `From these ${candidates.length} AI/science news articles (focused on roughly the last 24–36 hours), select the 3 most important stories.
+    const pickPrompt = `From these ${candidates.length} AI/science news articles (focused on roughly the last 48 hours), select the 3 most important stories.
 
 Return exactly 3 lines. Each line must be ONLY the article title, copied verbatim from the list below (no numbering, no source name).
 

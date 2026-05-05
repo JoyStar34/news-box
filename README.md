@@ -62,16 +62,17 @@ All use: `Authorization: Bearer <CRON_SECRET>`
 
 `GET /api/articles` pagination: `page`, `pageSize`, `range`, `sort` (`latest` | `top`), `source`.
 
-## Railway Cron (recommended order)
+## Railway Cron
 
 Stagger so score runs after fetch, summarize after score, daily brief once per day:
 
-| Job | Cron example |
+| Job | Cron |
 |-----|----------------|
 | fetch | `0 */6 * * *` |
 | score | `10 */6 * * *` |
-| summarize | `20 */6 * * *` |
-| daily-top | `0 2 * * *` |
+| summarize | `*/30 * * * *` |
+| daily-top | `0 6 * * *` |
+| backfill | `15 */ 2 * * *` |
 
 ### Steps
 

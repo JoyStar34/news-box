@@ -249,7 +249,7 @@ export default async function Home({
       </section>
 
       <section className="mb-10">
-        <h2 className="mb-4 text-xl font-semibold">过去 24 小时最重要</h2>
+        <h2 className="mb-4 text-xl font-semibold">过去 48 小时最重要</h2>
         {top.length === 0 ? (
           <p className="text-sm text-zinc-600">当前暂无重要新闻，稍后更新</p>
         ) : (
@@ -267,7 +267,7 @@ export default async function Home({
                 ) : null}
               </div>
               <p className="mt-2 text-xs text-zinc-500">
-                {article.source.name} · {article.category} · {formatDate(article.publishedAt)}
+                {article.source.name} · {article.category} · {formatDate(article.publishedAt ?? article.fetchedAt)}
               </p>
               <h3 className="mt-2 font-semibold leading-6">{article.title}</h3>
               <p className="mt-2 line-clamp-5 text-sm text-zinc-700">
