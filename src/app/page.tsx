@@ -239,7 +239,12 @@ export default async function Home({
       </header>
 
       <section className="mb-10 rounded-xl border p-6">
-        <h2 className="text-xl font-semibold">Today in Science</h2>
+        <div className="flex flex-wrap items-center gap-2">
+          <h2 className="text-xl font-semibold">Today in Science</h2>
+          <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-900">
+            每天 6:00 AM 更新
+          </span>
+        </div>
         <p className="mt-3 whitespace-pre-line text-sm text-zinc-700">{brief.text}</p>
       </section>
 
