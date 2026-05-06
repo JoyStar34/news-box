@@ -131,17 +131,9 @@ export async function scorePendingArticles(maxItems: number = BATCH_LIMIT) {
           const relevant = parseRelevance(relText);
 
           if (relevant === null) {
-            await prisma.article.update({
-              where: { id: article.id },
-              data: {
-                relevanceScore: null,
-                isRelevant: false,
-                importanceScore: null,
-                finalScore: null,
-                score: 0,
-              },
-            });
-            return { kind: "irrelevant" } satisfies ScoreOutcome;
+            console.warn(`[WARN][SCORE] relevance_parse_failed articleId=${article.id}`);
+            // Ambiguous model output is not a negative classification; leave it pending for retry.
+            return { kind: "error" } satisfies ScoreOutcome;
           }
 
           if (!relevant) {
