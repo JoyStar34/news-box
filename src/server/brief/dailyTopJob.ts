@@ -93,6 +93,9 @@ export async function generateDailyTopNews(): Promise<{
 
 Source type awareness: Community trending projects are usually less important than major industry, research, or infrastructure news unless they indicate a significant ecosystem shift.
 
+Prefer a balanced mix of categories and topics when possible.
+Avoid selecting multiple stories that cover highly similar domains unless they are exceptionally significant.
+
 Return exactly 3 lines. Each line must be ONLY the article title, copied verbatim from the list below (no numbering, no source name).
 
 ${list}`;
