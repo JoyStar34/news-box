@@ -33,7 +33,7 @@ export const RSS_SOURCES: SourceSeed[] = [
   { name: "Science", url: "https://www.science.org/action/showFeed?type=etoc&feed=rss&jc=science", category: Category.SCIENCE, priority: 5, weight: 1.0 },
   {
     name: "Scientific American",
-    url: "https://www.scientificamerican.com/feed/",
+    url: "https://feeds.feedburner.com/scientificamerican",
     category: Category.SCIENCE,
     priority: 4,
     weight: 0.85,
