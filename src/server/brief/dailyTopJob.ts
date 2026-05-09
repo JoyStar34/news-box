@@ -91,6 +91,8 @@ export async function generateDailyTopNews(): Promise<{
     const list = candidates.map((a, i) => `${i + 1}. ${a.title} (${a.source.name})`).join("\n");
     const pickPrompt = `From these ${candidates.length} AI/science news articles (focused on roughly the last 48 hours), select the 3 most important stories.
 
+Source type awareness: Community trending projects are usually less important than major industry, research, or infrastructure news unless they indicate a significant ecosystem shift.
+
 Return exactly 3 lines. Each line must be ONLY the article title, copied verbatim from the list below (no numbering, no source name).
 
 ${list}`;
@@ -148,7 +150,7 @@ ${list}`;
       const completion = await openai.responses.create({
         model: env.OPENAI_MODEL,
         temperature: 0.2,
-        input: `Summarize these 3 scientific breakthroughs into a short daily brief in Chinese.\nRequirements:\n- Exactly 3 paragraphs (one story per paragraph).\n- Separate paragraphs with a single blank line (use two newline characters between paragraphs).\n- No numbering or bullet prefixes.\n\n${listText}`,
+        input: `Summarize these 3 stories into a short daily brief in Chinese. Use a measured tone: do not treat community trending or repo-popularity items as major "breakthroughs" unless the story clearly signals a broad ecosystem or industry shift.\nRequirements:\n- Exactly 3 paragraphs (one story per paragraph).\n- Separate paragraphs with a single blank line (use two newline characters between paragraphs).\n- No numbering or bullet prefixes.\n\n${listText}`,
       });
       logOpenAiLatency("[DAILY_TOP]", startBrief);
       logOpenAiUsage(completion);

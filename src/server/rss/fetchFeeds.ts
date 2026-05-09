@@ -2,7 +2,7 @@ import Parser from "rss-parser";
 import { PERSISTED_WHY_FALLBACK } from "@/lib/articleDisplayDefaults";
 import { prisma } from "@/lib/prisma";
 import { normalizeFeedItem } from "@/server/rss/normalizeFeedItem";
-import { RSS_SOURCES } from "@/server/rss/sources";
+import { RSS_SOURCES, sourceSeedForPrisma } from "@/server/rss/sources";
 import { calculateScore } from "@/server/scoring/calculateScore";
 
 const parser = new Parser();
@@ -10,16 +10,14 @@ const MAX_ITEMS_PER_SOURCE = 10;
 
 export async function syncSources() {
   for (const source of RSS_SOURCES) {
+    const row = sourceSeedForPrisma(source);
     await prisma.source.upsert({
       where: { url: source.url },
       update: {
-        name: source.name,
-        category: source.category,
-        priority: source.priority,
-        weight: source.weight,
+        ...row,
         isActive: true,
       },
-      create: source,
+      create: row,
     });
   }
 }

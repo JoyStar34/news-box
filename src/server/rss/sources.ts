@@ -1,5 +1,7 @@
 import { Category } from "@prisma/client";
 
+export type SourceSeedType = "official" | "community";
+
 export type SourceSeed = {
   name: string;
   url: string;
@@ -7,7 +9,20 @@ export type SourceSeed = {
   priority: number;
   /** 0–1, used in final_score (Nature/Science ≈ 1.0, Verge ≈ 0.6) */
   weight: number;
+  /** Editorial hint only; not persisted on Source until schema adds a column. */
+  type?: SourceSeedType;
 };
+
+/** Fields accepted by Prisma `Source` create/update (strips `type`). */
+export function sourceSeedForPrisma(seed: SourceSeed) {
+  return {
+    name: seed.name,
+    url: seed.url,
+    category: seed.category,
+    priority: seed.priority,
+    weight: seed.weight,
+  };
+}
 
 export const RSS_SOURCES: SourceSeed[] = [
   { name: "TechCrunch", url: "https://techcrunch.com/feed/", category: Category.TECH, priority: 2, weight: 0.7 },
@@ -29,4 +44,20 @@ export const RSS_SOURCES: SourceSeed[] = [
   { name: "arXiv astro-ph", url: "http://export.arxiv.org/rss/astro-ph", category: Category.ASTRONOMY, priority: 4, weight: 0.9 },
   { name: "arXiv physics", url: "http://export.arxiv.org/rss/physics", category: Category.PAPER, priority: 3, weight: 0.9 },
   { name: "arXiv cs.AI", url: "http://export.arxiv.org/rss/cs.AI", category: Category.AI, priority: 4, weight: 0.9 },
+  {
+    name: "Hacker News",
+    url: "https://news.ycombinator.com/rss",
+    category: Category.TECH,
+    priority: 2,
+    weight: 0.9,
+    type: "official",
+  },
+  {
+    name: "GitHub Trending",
+    url: "https://mshibanami.github.io/GitHubTrendingRSS/daily/all.xml",
+    category: Category.TECH,
+    priority: 5,
+    weight: 0.55,
+    type: "community",
+  },
 ];
