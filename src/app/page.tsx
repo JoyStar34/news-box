@@ -391,6 +391,14 @@ export default async function Home({
           <div className="flex gap-2">
             <Link
               href={pageHrefWithLatestAnchor(
+                buildPageHref(1, categoryParam, effectiveRange, effectiveSort, sourceParam),
+              )}
+              className={`rounded-lg border px-3 py-1 text-sm ${safePage > 1 ? "hover:bg-zinc-100" : "pointer-events-none opacity-40"}`}
+            >
+              返回首页
+            </Link>
+            <Link
+              href={pageHrefWithLatestAnchor(
                 buildPageHref(Math.max(1, safePage - 1), categoryParam, effectiveRange, effectiveSort, sourceParam),
               )}
               className={`rounded-lg border px-3 py-1 text-sm ${hasPrev ? "hover:bg-zinc-100" : "pointer-events-none opacity-40"}`}
