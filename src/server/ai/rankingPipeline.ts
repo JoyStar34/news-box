@@ -3,6 +3,7 @@ import pLimit from "p-limit";
 import { prisma } from "@/lib/prisma";
 import { logOpenAiLatency, logOpenAiUsage } from "@/lib/openaiObservability";
 import { getEnv } from "@/server/config/env";
+import { parseRelevance } from "@/server/ai/parseRelevance";
 import { computeFinalScore, computeFreshnessScore } from "@/server/scoring/freshness";
 
 const BATCH_LIMIT = 30;
@@ -72,14 +73,6 @@ async function callText(openai: OpenAI, model: string, input: string): Promise<s
   logOpenAiLatency("[SCORE]", start);
   logOpenAiUsage(completion);
   return (completion.output_text ?? "").trim();
-}
-
-function parseRelevance(text: string): boolean | null {
-  const upper = text.toUpperCase();
-  if (upper.includes("NOT_RELEVANT")) return false;
-  if (upper.includes("RELEVANT") && !upper.includes("NOT_")) return true;
-  if (upper.split(/\s+/).some((w) => w === "RELEVANT")) return true;
-  return null;
 }
 
 function parseImportance(text: string): number | null {
