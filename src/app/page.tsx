@@ -294,6 +294,7 @@ export default async function Home({
               return (
                 <Link
                   key={option.value}
+                  scroll={false}
                   href={buildSortHref(option.value, categoryParam, effectiveRange, sourceParam)}
                   className={`rounded-full border px-3 py-1 text-xs ${
                     active ? "border-zinc-900 bg-zinc-900 text-white" : "border-zinc-300 text-zinc-700 hover:bg-zinc-100"
@@ -308,6 +309,7 @@ export default async function Home({
               return (
                 <Link
                   key={option.value}
+                  scroll={false}
                   href={buildRangeHref(option.value, categoryParam, effectiveSort, sourceParam)}
                   className={`rounded-full border px-3 py-1 text-xs ${
                     active ? "border-blue-600 bg-blue-600 text-white" : "border-zinc-300 text-zinc-700 hover:bg-zinc-100"
@@ -326,6 +328,7 @@ export default async function Home({
             return (
               <Link
                 key={option.value}
+                scroll={false}
                 href={buildCategoryHref(option.value, effectiveRange, effectiveSort, sourceParam)}
                 className={`rounded-full border px-3 py-1 text-xs ${
                   active ? "border-zinc-900 bg-zinc-900 text-white" : "border-zinc-300 text-zinc-700 hover:bg-zinc-100"
@@ -343,6 +346,7 @@ export default async function Home({
             return (
               <Link
                 key={option.id}
+                scroll={false}
                 href={buildSourceHref(option.id, categoryParam, effectiveRange, effectiveSort)}
                 className={`rounded-full border px-3 py-1 text-xs ${
                   active ? "border-emerald-700 bg-emerald-700 text-white" : "border-zinc-300 text-zinc-700 hover:bg-zinc-100"
