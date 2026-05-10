@@ -81,6 +81,12 @@ function buildPageHref(
   return query ? `/?${query}` : "/";
 }
 
+const LATEST_NEWS_SECTION_ID = "latest-news";
+
+function pageHrefWithLatestAnchor(href: string) {
+  return `${href}#${LATEST_NEWS_SECTION_ID}`;
+}
+
 function buildCategoryHref(
   category: string,
   range: string | undefined,
@@ -287,7 +293,9 @@ export default async function Home({
 
       <section>
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-xl font-semibold">最新新闻</h2>
+          <h2 id={LATEST_NEWS_SECTION_ID} className="text-xl font-semibold">
+            最新新闻
+          </h2>
           <div className="flex flex-wrap gap-2">
             {sortOptions.map((option) => {
               const active = effectiveSort === option.value;
@@ -382,13 +390,17 @@ export default async function Home({
           </p>
           <div className="flex gap-2">
             <Link
-              href={buildPageHref(Math.max(1, safePage - 1), categoryParam, effectiveRange, effectiveSort, sourceParam)}
+              href={pageHrefWithLatestAnchor(
+                buildPageHref(Math.max(1, safePage - 1), categoryParam, effectiveRange, effectiveSort, sourceParam),
+              )}
               className={`rounded-lg border px-3 py-1 text-sm ${hasPrev ? "hover:bg-zinc-100" : "pointer-events-none opacity-40"}`}
             >
               上一页
             </Link>
             <Link
-              href={buildPageHref(safePage + 1, categoryParam, effectiveRange, effectiveSort, sourceParam)}
+              href={pageHrefWithLatestAnchor(
+                buildPageHref(safePage + 1, categoryParam, effectiveRange, effectiveSort, sourceParam),
+              )}
               className={`rounded-lg border px-3 py-1 text-sm ${hasNext ? "hover:bg-zinc-100" : "pointer-events-none opacity-40"}`}
             >
               下一页
