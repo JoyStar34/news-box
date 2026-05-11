@@ -74,11 +74,10 @@ async function callText(openai: OpenAI, model: string, input: string): Promise<s
   return (completion.output_text ?? "").trim();
 }
 
-function parseRelevance(text: string): boolean | null {
+export function parseRelevance(text: string): boolean | null {
   const upper = text.toUpperCase();
-  if (upper.includes("NOT_RELEVANT")) return false;
-  if (upper.includes("RELEVANT") && !upper.includes("NOT_")) return true;
-  if (upper.split(/\s+/).some((w) => w === "RELEVANT")) return true;
+  if (/\b(?:NOT[\s_-]*RELEVANT|IRRELEVANT)\b/.test(upper)) return false;
+  if (/\bRELEVANT\b/.test(upper)) return true;
   return null;
 }
 
