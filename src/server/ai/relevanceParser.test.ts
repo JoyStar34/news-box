@@ -5,6 +5,7 @@ import { parseRelevance } from "./relevanceParser";
 test("parseRelevance treats negative relevance responses as irrelevant", () => {
   assert.equal(parseRelevance("NOT_RELEVANT"), false);
   assert.equal(parseRelevance("NOT RELEVANT"), false);
+  assert.equal(parseRelevance("not particularly relevant"), false);
   assert.equal(parseRelevance("not-relevant"), false);
   assert.equal(parseRelevance("irrelevant"), false);
 });
