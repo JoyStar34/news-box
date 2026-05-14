@@ -1,5 +1,5 @@
 export function parseRelevance(text: string): boolean | null {
-  const tokens = text.toUpperCase().match(/[A-Z]+/g) ?? [];
+  const tokens: string[] = text.toUpperCase().match(/[A-Z]+/g) ?? [];
   const relevantIndex = tokens.indexOf("RELEVANT");
 
   if (tokens.includes("IRRELEVANT")) return false;
