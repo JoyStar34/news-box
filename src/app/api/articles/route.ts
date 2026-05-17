@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Category } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { parsePositiveIntegerParam } from "@/lib/requestParams";
 
 type RangeKey = "24h" | "7d" | "30d";
 type SortKey = "latest" | "top";
@@ -25,8 +26,8 @@ export async function GET(request: NextRequest) {
   const sourceParam = searchParams.get("source");
   const rangeParam = searchParams.get("range");
   const sortParam = (searchParams.get("sort") ?? "latest") as SortKey;
-  const page = Math.max(1, Number(searchParams.get("page") ?? "1"));
-  const pageSize = Math.min(50, Math.max(1, Number(searchParams.get("pageSize") ?? "12")));
+  const page = parsePositiveIntegerParam(searchParams.get("page"), 1);
+  const pageSize = parsePositiveIntegerParam(searchParams.get("pageSize"), 12, 50);
   const rangeStart = buildRangeDate(rangeParam);
 
   const where: {
