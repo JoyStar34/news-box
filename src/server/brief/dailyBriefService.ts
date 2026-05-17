@@ -78,21 +78,40 @@ function isPersistedTitleListOnlyBody(body: string, items: ArticleWithSource[]):
   return body.trim() === expected.trim();
 }
 
-/** Fallback when DailyBrief not yet generated: recent high-ranked articles only */
+function recentArticleWindow(since: Date) {
+  return {
+    OR: [
+      { publishedAt: { gte: since } },
+      {
+        AND: [{ publishedAt: null }, { fetchedAt: { gte: since } }],
+      },
+    ],
+  };
+}
+
+/** Fallback when DailyBrief not yet generated: recent AI-ranked articles, else recent legacy-ranked articles. */
 export async function getFallbackTopArticles(): Promise<ArticleWithSource[]> {
   const since = subHours(new Date(), 48);
-  return prisma.article.findMany({
+  const aiRanked = await prisma.article.findMany({
     where: {
       isRelevant: true,
       finalScore: { not: null },
-      OR: [
-        { publishedAt: { gte: since } },
-        {
-          AND: [{ publishedAt: null }, { fetchedAt: { gte: since } }],
-        },
-      ],
+      ...recentArticleWindow(since),
     },
     orderBy: [{ finalScore: "desc" }, { fetchedAt: "desc" }],
+    take: 3,
+    include: { source: true },
+  });
+  if (aiRanked.length) return aiRanked;
+
+  return prisma.article.findMany({
+    where: {
+      AND: [
+        { OR: [{ isRelevant: true }, { isRelevant: null }] },
+        recentArticleWindow(since),
+      ],
+    },
+    orderBy: [{ score: "desc" }, { fetchedAt: "desc" }],
     take: 3,
     include: { source: true },
   });
@@ -147,14 +166,14 @@ export async function buildDailyBriefFromStore(): Promise<DailyBriefResult> {
     getYesterdayTopArticleIds(),
   ]);
 
-  const rawItems: ArticleWithSource[] =
-    brief?.items.map((i) => ({ ...i.article, source: i.article.source })) ?? (await getDailyTopArticles());
+  const persistedItems = brief?.items.map((i) => ({ ...i.article, source: i.article.source })) ?? [];
+  const rawItems: ArticleWithSource[] = persistedItems.length ? persistedItems : await getDailyTopArticles();
 
   const items: TopBriefArticle[] = attachRepeatFromYesterday(rawItems, yesterdayIds);
 
   const emptyCopy = "当前暂无重要新闻，稍后更新";
 
-  const storedBody = brief?.body?.trim() ?? "";
+  const storedBody = persistedItems.length ? (brief?.body?.trim() ?? "") : "";
   let text: string;
   if (storedBody && !isPersistedTitleListOnlyBody(storedBody, items)) {
     text = storedBody;
