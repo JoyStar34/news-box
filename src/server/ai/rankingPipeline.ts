@@ -75,7 +75,7 @@ async function callText(openai: OpenAI, model: string, input: string): Promise<s
 }
 
 export function parseRelevance(text: string): boolean | null {
-  const words = text.toUpperCase().match(/[A-Z]+/g) ?? [];
+  const words: string[] = text.toUpperCase().match(/[A-Z]+/g) ?? [];
   if (words.includes("IRRELEVANT")) return false;
 
   const relevantIndex = words.findIndex((word) => word === "RELEVANT");
