@@ -100,7 +100,6 @@ export async function scorePendingArticles(maxItems: number = BATCH_LIMIT) {
 
   type ScoreOutcome =
     | { kind: "irrelevant" }
-    | { kind: "relevant_no_final" }
     | { kind: "scored"; importance: number; finalScore: number }
     | { kind: "error" };
 
@@ -171,12 +170,11 @@ export async function scorePendingArticles(maxItems: number = BATCH_LIMIT) {
   );
 
   const irrelevant = outcomes.filter((o) => o.kind === "irrelevant").length;
-  const relevantNoFinal = outcomes.filter((o) => o.kind === "relevant_no_final").length;
   const scored = outcomes.filter((o) => o.kind === "scored").length;
   const processed = outcomes.filter((o) => o.kind !== "error").length;
 
   console.log(`[SCORE] evaluating articles=${pending.length}`);
-  console.log(`[SCORE] relevant=${relevantNoFinal + scored} irrelevant=${irrelevant}`);
+  console.log(`[SCORE] relevant=${scored} irrelevant=${irrelevant}`);
   console.log(`[SCORE] scored=${scored}`);
 
   const scoredRows = outcomes.filter((o): o is Extract<ScoreOutcome, { kind: "scored" }> => o.kind === "scored");
