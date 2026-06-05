@@ -282,7 +282,12 @@ export default async function Home({
               <p className="mt-2 rounded-lg bg-zinc-100 p-2 text-xs text-zinc-700">
                 为什么重要：{article.whyImportant?.trim() || DISPLAY_WHY_FALLBACK}
               </p>
-              <Link className="mt-3 inline-block text-sm text-blue-600 hover:underline" href={article.url} target="_blank">
+              <Link
+                className="mt-3 inline-block text-sm text-blue-600 hover:underline"
+                href={article.url}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
                 阅读原文
               </Link>
             </article>
@@ -378,7 +383,12 @@ export default async function Home({
               <p className="mt-2 rounded-lg bg-zinc-100 p-2 text-xs text-zinc-700">
                 为什么重要：{article.whyImportant?.trim() || DISPLAY_WHY_FALLBACK}
               </p>
-              <Link className="mt-2 inline-block text-sm text-blue-600 hover:underline" href={article.url} target="_blank">
+              <Link
+                className="mt-2 inline-block text-sm text-blue-600 hover:underline"
+                href={article.url}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
                 原文链接
               </Link>
             </article>
