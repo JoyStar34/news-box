@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import pLimit from "p-limit";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { logOpenAiLatency, logOpenAiUsage } from "@/lib/openaiObservability";
 import { getEnv } from "@/server/config/env";
@@ -74,15 +75,18 @@ async function callText(openai: OpenAI, model: string, input: string): Promise<s
   return (completion.output_text ?? "").trim();
 }
 
-function parseRelevance(text: string): boolean | null {
+export const pendingScoreWhere = {
+  OR: [{ isRelevant: null }, { isRelevant: true, finalScore: null }],
+} satisfies Prisma.ArticleWhereInput;
+
+export function parseRelevance(text: string): boolean | null {
   const upper = text.toUpperCase();
-  if (upper.includes("NOT_RELEVANT")) return false;
-  if (upper.includes("RELEVANT") && !upper.includes("NOT_")) return true;
-  if (upper.split(/\s+/).some((w) => w === "RELEVANT")) return true;
+  if (/\b(?:NOT[\s_-]*RELEVANT|IRRELEVANT)\b/.test(upper)) return false;
+  if (/\bRELEVANT\b/.test(upper)) return true;
   return null;
 }
 
-function parseImportance(text: string): number | null {
+export function parseImportance(text: string): number | null {
   const m = text.match(/\b(\d{1,3})\b/);
   if (!m) return null;
   const n = Number(m[1]);
@@ -91,7 +95,7 @@ function parseImportance(text: string): number | null {
 }
 
 /**
- * Run AI relevance → importance → final_score for articles with isRelevant = null.
+ * Run AI relevance → importance → final_score for articles needing score work.
  * Keeps legacy `score` in sync with `finalScore` for list sorting.
  */
 export async function scorePendingArticles(maxItems: number = BATCH_LIMIT) {
@@ -105,7 +109,7 @@ export async function scorePendingArticles(maxItems: number = BATCH_LIMIT) {
   const model = env.OPENAI_MODEL;
 
   const pending = await prisma.article.findMany({
-    where: { isRelevant: null },
+    where: pendingScoreWhere,
     include: { source: true },
     orderBy: { fetchedAt: "desc" },
     take: maxItems,
@@ -123,25 +127,19 @@ export async function scorePendingArticles(maxItems: number = BATCH_LIMIT) {
     pending.map((article) =>
       limit(async () => {
         try {
-          const relText = await callText(
-            openai,
-            model,
-            relevancePrompt(article.title, article.summaryRaw, article.source.name),
-          );
-          const relevant = parseRelevance(relText);
+          let relevant = article.isRelevant;
+
+          if (relevant !== true) {
+            const relText = await callText(
+              openai,
+              model,
+              relevancePrompt(article.title, article.summaryRaw, article.source.name),
+            );
+            relevant = parseRelevance(relText);
+          }
 
           if (relevant === null) {
-            await prisma.article.update({
-              where: { id: article.id },
-              data: {
-                relevanceScore: null,
-                isRelevant: false,
-                importanceScore: null,
-                finalScore: null,
-                score: 0,
-              },
-            });
-            return { kind: "irrelevant" } satisfies ScoreOutcome;
+            return { kind: "error" } satisfies ScoreOutcome;
           }
 
           if (!relevant) {
