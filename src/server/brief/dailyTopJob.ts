@@ -68,8 +68,9 @@ export async function generateDailyTopNews(): Promise<{
   });
 
   const stripAdj = (a: WithAdj): WithSource => {
-    const { adjustedScore: _, ...rest } = a;
-    return rest;
+    const rest: Partial<WithAdj> = { ...a };
+    delete rest.adjustedScore;
+    return rest as WithSource;
   };
 
   const candidates: WithSource[] = ranked.slice(0, 10).map(stripAdj);
