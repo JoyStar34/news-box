@@ -1,14 +1,11 @@
 import OpenAI from "openai";
-import { subDays, subHours } from "date-fns";
+import { subHours } from "date-fns";
 import { prisma } from "@/lib/prisma";
 import { logOpenAiLatency, logOpenAiUsage } from "@/lib/openaiObservability";
 import { getEnv } from "@/server/config/env";
 import type { Article, Source } from "@prisma/client";
 import { formatBriefTextForDisplay } from "@/server/brief/dailyBriefService";
-
-function utcDayStart(d: Date = new Date()): Date {
-  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
-}
+import { getRecentBriefDemotionRange, utcDayStart } from "@/server/brief/dailyTopSelection";
 
 function normalizeTitle(s: string): string {
   return s.trim().toLowerCase().replace(/\s+/g, " ");
@@ -49,7 +46,7 @@ export async function generateDailyTopNews(): Promise<{
 
   const recentBriefs = await prisma.dailyBrief.findMany({
     where: {
-      briefDate: { gte: utcDayStart(subDays(now, 2)) },
+      briefDate: getRecentBriefDemotionRange(now),
     },
     include: { items: true },
   });

@@ -3,6 +3,7 @@ import { Category } from "@prisma/client";
 import { DISPLAY_SUMMARY_FALLBACK, DISPLAY_WHY_FALLBACK } from "@/lib/articleDisplayDefaults";
 import { getTimeLabel } from "@/lib/articleTimeLabels";
 import { prisma } from "@/lib/prisma";
+import { parsePositiveIntParam } from "@/lib/pagination";
 import { buildDailyBriefFromStore } from "@/server/brief/dailyBriefService";
 
 export const dynamic = "force-dynamic";
@@ -147,8 +148,7 @@ export default async function Home({
   const sourceParam = params.source;
   const effectiveRange = normalizeRange(params.range);
   const effectiveSort = normalizeSort(params.sort);
-  const pageParam = Number(params.page ?? "1");
-  const page = Number.isFinite(pageParam) ? Math.max(1, pageParam) : 1;
+  const page = parsePositiveIntParam(params.page, { defaultValue: 1 });
   const rangeStart = buildRangeDate(effectiveRange);
 
   const where: {
