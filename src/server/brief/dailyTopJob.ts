@@ -49,7 +49,10 @@ export async function generateDailyTopNews(): Promise<{
 
   const recentBriefs = await prisma.dailyBrief.findMany({
     where: {
-      briefDate: { gte: utcDayStart(subDays(now, 2)) },
+      briefDate: {
+        gte: utcDayStart(subDays(now, 2)),
+        lt: day,
+      },
     },
     include: { items: true },
   });
