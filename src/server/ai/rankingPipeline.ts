@@ -8,7 +8,7 @@ import { computeFinalScore, computeFreshnessScore } from "@/server/scoring/fresh
 const BATCH_LIMIT = 30;
 const CONCURRENCY = 3;
 
-/** Articles that have not yet been classified by the relevance model */
+/** Articles that still need a terminal score or relevance decision. */
 function relevancePrompt(title: string, summary: string | null, sourceName: string) {
   return `You are filtering news relevance.
 
@@ -74,15 +74,22 @@ async function callText(openai: OpenAI, model: string, input: string): Promise<s
   return (completion.output_text ?? "").trim();
 }
 
-function parseRelevance(text: string): boolean | null {
-  const upper = text.toUpperCase();
-  if (upper.includes("NOT_RELEVANT")) return false;
-  if (upper.includes("RELEVANT") && !upper.includes("NOT_")) return true;
-  if (upper.split(/\s+/).some((w) => w === "RELEVANT")) return true;
+export function parseRelevance(text: string): boolean | null {
+  const normalized = text
+    .toUpperCase()
+    .replace(/[_-]+/g, " ")
+    .replace(/[^A-Z0-9\s]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!normalized) return null;
+  if (/\bNOT\s+RELEVANT\b/.test(normalized)) return false;
+  if (/\bIRRELEVANT\b/.test(normalized)) return false;
+  if (/\bRELEVANT\b/.test(normalized)) return true;
   return null;
 }
 
-function parseImportance(text: string): number | null {
+export function parseImportance(text: string): number | null {
   const m = text.match(/\b(\d{1,3})\b/);
   if (!m) return null;
   const n = Number(m[1]);
@@ -91,7 +98,7 @@ function parseImportance(text: string): number | null {
 }
 
 /**
- * Run AI relevance → importance → final_score for articles with isRelevant = null.
+ * Run AI relevance → importance → final_score for articles without a completed score.
  * Keeps legacy `score` in sync with `finalScore` for list sorting.
  */
 export async function scorePendingArticles(maxItems: number = BATCH_LIMIT) {
@@ -105,7 +112,12 @@ export async function scorePendingArticles(maxItems: number = BATCH_LIMIT) {
   const model = env.OPENAI_MODEL;
 
   const pending = await prisma.article.findMany({
-    where: { isRelevant: null },
+    where: {
+      OR: [
+        { isRelevant: null },
+        { isRelevant: true, finalScore: null },
+      ],
+    },
     include: { source: true },
     orderBy: { fetchedAt: "desc" },
     take: maxItems,
@@ -115,8 +127,8 @@ export async function scorePendingArticles(maxItems: number = BATCH_LIMIT) {
 
   type ScoreOutcome =
     | { kind: "irrelevant" }
-    | { kind: "relevant_no_final" }
     | { kind: "scored"; importance: number; finalScore: number }
+    | { kind: "unparsed" }
     | { kind: "error" };
 
   const outcomes = await Promise.all(
@@ -131,17 +143,8 @@ export async function scorePendingArticles(maxItems: number = BATCH_LIMIT) {
           const relevant = parseRelevance(relText);
 
           if (relevant === null) {
-            await prisma.article.update({
-              where: { id: article.id },
-              data: {
-                relevanceScore: null,
-                isRelevant: false,
-                importanceScore: null,
-                finalScore: null,
-                score: 0,
-              },
-            });
-            return { kind: "irrelevant" } satisfies ScoreOutcome;
+            console.warn(`[SCORE] unparseable relevance response for article=${article.id}`);
+            return { kind: "unparsed" } satisfies ScoreOutcome;
           }
 
           if (!relevant) {
@@ -165,16 +168,8 @@ export async function scorePendingArticles(maxItems: number = BATCH_LIMIT) {
           );
           const importance = parseImportance(impText);
           if (importance === null) {
-            await prisma.article.update({
-              where: { id: article.id },
-              data: {
-                relevanceScore: 100,
-                isRelevant: true,
-                importanceScore: null,
-                finalScore: null,
-              },
-            });
-            return { kind: "relevant_no_final" } satisfies ScoreOutcome;
+            console.warn(`[SCORE] unparseable importance response for article=${article.id}`);
+            return { kind: "unparsed" } satisfies ScoreOutcome;
           }
 
           const ref = article.publishedAt ?? article.fetchedAt;
@@ -203,13 +198,13 @@ export async function scorePendingArticles(maxItems: number = BATCH_LIMIT) {
   );
 
   const irrelevant = outcomes.filter((o) => o.kind === "irrelevant").length;
-  const relevantNoFinal = outcomes.filter((o) => o.kind === "relevant_no_final").length;
   const scored = outcomes.filter((o) => o.kind === "scored").length;
-  const processed = outcomes.filter((o) => o.kind !== "error").length;
+  const unparsed = outcomes.filter((o) => o.kind === "unparsed").length;
+  const processed = irrelevant + scored;
 
   console.log(`[SCORE] evaluating articles=${pending.length}`);
-  console.log(`[SCORE] relevant=${relevantNoFinal + scored} irrelevant=${irrelevant}`);
-  console.log(`[SCORE] scored=${scored}`);
+  console.log(`[SCORE] relevant=${scored} irrelevant=${irrelevant}`);
+  console.log(`[SCORE] scored=${scored} unparsed=${unparsed}`);
 
   const scoredRows = outcomes.filter((o): o is Extract<ScoreOutcome, { kind: "scored" }> => o.kind === "scored");
   if (scoredRows.length > 0) {
