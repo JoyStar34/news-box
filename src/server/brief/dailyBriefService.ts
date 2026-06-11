@@ -147,14 +147,16 @@ export async function buildDailyBriefFromStore(): Promise<DailyBriefResult> {
     getYesterdayTopArticleIds(),
   ]);
 
+  const persistedItems: ArticleWithSource[] =
+    brief?.items.map((i) => ({ ...i.article, source: i.article.source })) ?? [];
   const rawItems: ArticleWithSource[] =
-    brief?.items.map((i) => ({ ...i.article, source: i.article.source })) ?? (await getDailyTopArticles());
+    persistedItems.length > 0 ? persistedItems : await getFallbackTopArticles();
 
   const items: TopBriefArticle[] = attachRepeatFromYesterday(rawItems, yesterdayIds);
 
   const emptyCopy = "当前暂无重要新闻，稍后更新";
 
-  const storedBody = brief?.body?.trim() ?? "";
+  const storedBody = persistedItems.length > 0 ? (brief?.body?.trim() ?? "") : "";
   let text: string;
   if (storedBody && !isPersistedTitleListOnlyBody(storedBody, items)) {
     text = storedBody;
