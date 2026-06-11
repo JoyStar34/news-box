@@ -74,16 +74,16 @@ async function callText(openai: OpenAI, model: string, input: string): Promise<s
   return (completion.output_text ?? "").trim();
 }
 
-function parseRelevance(text: string): boolean | null {
-  const upper = text.toUpperCase();
-  if (upper.includes("NOT_RELEVANT")) return false;
-  if (upper.includes("RELEVANT") && !upper.includes("NOT_")) return true;
-  if (upper.split(/\s+/).some((w) => w === "RELEVANT")) return true;
+export function parseRelevance(text: string): boolean | null {
+  const upper = text.trim().toUpperCase();
+  if (!upper) return null;
+  if (/\b(?:NOT[\s_-]+RELEVANT|IRRELEVANT)\b/.test(upper)) return false;
+  if (/\bRELEVANT\b/.test(upper)) return true;
   return null;
 }
 
-function parseImportance(text: string): number | null {
-  const m = text.match(/\b(\d{1,3})\b/);
+export function parseImportance(text: string): number | null {
+  const m = text.match(/(?:^|[^\d-])(\d{1,3})(?!\d)/);
   if (!m) return null;
   const n = Number(m[1]);
   if (Number.isNaN(n) || n < 0 || n > 100) return null;
@@ -91,7 +91,7 @@ function parseImportance(text: string): number | null {
 }
 
 /**
- * Run AI relevance → importance → final_score for articles with isRelevant = null.
+ * Run AI relevance -> importance -> final_score for unscored articles.
  * Keeps legacy `score` in sync with `finalScore` for list sorting.
  */
 export async function scorePendingArticles(maxItems: number = BATCH_LIMIT) {
@@ -105,7 +105,9 @@ export async function scorePendingArticles(maxItems: number = BATCH_LIMIT) {
   const model = env.OPENAI_MODEL;
 
   const pending = await prisma.article.findMany({
-    where: { isRelevant: null },
+    where: {
+      OR: [{ isRelevant: null }, { isRelevant: true, finalScore: null }],
+    },
     include: { source: true },
     orderBy: { fetchedAt: "desc" },
     take: maxItems,
@@ -123,25 +125,19 @@ export async function scorePendingArticles(maxItems: number = BATCH_LIMIT) {
     pending.map((article) =>
       limit(async () => {
         try {
-          const relText = await callText(
-            openai,
-            model,
-            relevancePrompt(article.title, article.summaryRaw, article.source.name),
-          );
-          const relevant = parseRelevance(relText);
+          let relevant: boolean | null = article.isRelevant === true ? true : null;
+          if (relevant === null) {
+            const relText = await callText(
+              openai,
+              model,
+              relevancePrompt(article.title, article.summaryRaw, article.source.name),
+            );
+            relevant = parseRelevance(relText);
+          }
 
           if (relevant === null) {
-            await prisma.article.update({
-              where: { id: article.id },
-              data: {
-                relevanceScore: null,
-                isRelevant: false,
-                importanceScore: null,
-                finalScore: null,
-                score: 0,
-              },
-            });
-            return { kind: "irrelevant" } satisfies ScoreOutcome;
+            console.error(`[ERROR][SCORE] Unable to parse relevance response for article=${article.id}`);
+            return { kind: "error" } satisfies ScoreOutcome;
           }
 
           if (!relevant) {
