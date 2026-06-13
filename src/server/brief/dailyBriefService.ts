@@ -52,6 +52,17 @@ export function buildFallbackBriefText(items: ArticleWithSource[]): string {
   return items.map((item, idx) => `${idx + 1}. ${blurbFromArticle(item)}`).join("\n\n");
 }
 
+type DailyBriefItemWithArticle = {
+  article: ArticleWithSource;
+};
+
+export function extractDailyBriefArticles(
+  items: DailyBriefItemWithArticle[] | undefined,
+): ArticleWithSource[] | null {
+  if (!items?.length) return null;
+  return items.map((i) => ({ ...i.article, source: i.article.source }));
+}
+
 /**
  * Turn a one-line Chinese/Latin brief (e.g. "句一。句二。句三。") into spaced paragraphs for `whitespace-pre-line`.
  * No-op if there are already blank-line breaks or fewer than 2 detected sentences.
@@ -148,7 +159,7 @@ export async function buildDailyBriefFromStore(): Promise<DailyBriefResult> {
   ]);
 
   const rawItems: ArticleWithSource[] =
-    brief?.items.map((i) => ({ ...i.article, source: i.article.source })) ?? (await getDailyTopArticles());
+    extractDailyBriefArticles(brief?.items) ?? (await getDailyTopArticles());
 
   const items: TopBriefArticle[] = attachRepeatFromYesterday(rawItems, yesterdayIds);
 
