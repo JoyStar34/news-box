@@ -15,7 +15,7 @@ export function parseRelevance(text: string): boolean | null {
   if (exact === "RELEVANT") return true;
   if (exact === "NOT_RELEVANT" || exact === "IRRELEVANT") return false;
 
-  const words = trimmed.toUpperCase().match(/[A-Z]+/g) ?? [];
+  const words: string[] = trimmed.toUpperCase().match(/[A-Z]+/g) ?? [];
   if (words.includes("IRRELEVANT") || words.includes("NOTRELEVANT")) {
     return false;
   }
