@@ -1,6 +1,8 @@
-export const SCORING_QUEUE_WHERE = {
+import type { Prisma } from "@prisma/client";
+
+export const SCORING_QUEUE_WHERE: Prisma.ArticleWhereInput = {
   OR: [{ isRelevant: null }, { isRelevant: true, finalScore: null }],
-} as const;
+};
 
 export function parseRelevance(text: string): boolean | null {
   const normalized = text
