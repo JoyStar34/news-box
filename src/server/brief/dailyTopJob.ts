@@ -5,6 +5,7 @@ import { logOpenAiLatency, logOpenAiUsage } from "@/lib/openaiObservability";
 import { getEnv } from "@/server/config/env";
 import type { Article, Source } from "@prisma/client";
 import { formatBriefTextForDisplay } from "@/server/brief/dailyBriefService";
+import { pickDiverseArticles } from "@/lib/articleSimilarity";
 
 function utcDayStart(d: Date = new Date()): Date {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
@@ -75,8 +76,9 @@ export async function generateDailyTopNews(): Promise<{
     return rest;
   };
 
-  const candidates: WithSource[] = ranked.slice(0, 10).map(stripAdj);
-  const fallbackTop3: WithSource[] = ranked.slice(0, 3).map(stripAdj);
+  const rankedArticles = ranked.map(stripAdj);
+  const candidates: WithSource[] = pickDiverseArticles(rankedArticles, 10, undefined, "[DAILY_TOP]");
+  const fallbackTop3: WithSource[] = pickDiverseArticles(rankedArticles, 3, undefined, "[DAILY_TOP]");
 
   console.log(`[DAILY_TOP] candidates=${candidates.length} pool=${pool.length}`);
 
@@ -95,6 +97,7 @@ Source type awareness: Community trending projects are usually less important th
 
 Prefer a balanced mix of categories and topics when possible.
 Avoid selecting multiple stories that cover highly similar domains unless they are exceptionally significant.
+Do not select two articles about the same specific event or announcement, even if titles differ or they come from different outlets. When multiple articles cover the same story, pick only the single most important one.
 
 Return exactly 3 lines. Each line must be ONLY the article title, copied verbatim from the list below (no numbering, no source name).
 
@@ -131,16 +134,23 @@ ${list}`;
       }
 
       if (matched.length >= 3) {
-        chosen = matched.slice(0, 3);
+        chosen = pickDiverseArticles(matched, 3, undefined, "[DAILY_TOP]");
       } else if (matched.length > 0) {
-        const rest = fallbackTop3.filter((a) => !matched.some((m) => m.id === a.id));
-        chosen = [...matched, ...rest].slice(0, 3);
+        const rest = rankedArticles.filter((a) => !matched.some((m) => m.id === a.id));
+        chosen = pickDiverseArticles([...matched, ...rest], 3, undefined, "[DAILY_TOP]");
       }
     } catch (err) {
       console.error(`[ERROR][DAILY_TOP]`, err);
       chosen = fallbackTop3;
     }
   }
+
+  chosen = pickDiverseArticles(
+    [...chosen, ...rankedArticles.filter((a) => !chosen.some((c) => c.id === a.id))],
+    3,
+    undefined,
+    "[DAILY_TOP]",
+  );
 
   console.log(`[DAILY_TOP] selected=[${chosen.map((a) => a.id).join(",")}]`);
 

@@ -1,82 +1,118 @@
 # News Box
 
-News Box is a single-service MVP that aggregates global tech/science/astronomy RSS feeds, stores them in PostgreSQL, and adds AI summaries plus **AI News 2.0** relevance scoring and daily Top 3.
+News Box is a self-hosted technology, science, and astronomy news dashboard. It collects RSS feeds, stores articles in PostgreSQL, enriches them with AI summaries and relevance scores, and publishes a daily Top 3 briefing.
 
-## Stack
+## Features
 
-- Next.js (App Router) + TypeScript
-- Prisma + PostgreSQL
-- OpenAI / OpenRouter (`gpt-4o-mini` by default)
+- Aggregates curated RSS sources into a single feed
+- Filters, ranks, and summarizes articles with OpenAI-compatible models
+- Produces a persisted daily Top 3 and editorial-style daily brief
+- Provides a responsive Next.js web interface and public JSON APIs
+- Supports scheduled ingestion and enrichment through protected internal endpoints
 
-## Setup
+## Tech Stack
 
-1. Copy env:
+- Next.js 16 (App Router) and TypeScript
+- Prisma and PostgreSQL
+- OpenAI SDK, compatible with OpenAI and OpenRouter
+- Tailwind CSS
+
+## Getting Started
+
+### Prerequisites
+
+- Node.js 20 or newer
+- PostgreSQL database
+- An OpenAI-compatible API key
+
+### Install
 
 ```bash
+git clone https://github.com/JoyStar34/news-box.git
+cd news-box
+npm install
 cp .env.example .env
 ```
 
-2. Install:
+Configure the variables in `.env`:
 
-```bash
-npm install
+```env
+DATABASE_URL="postgresql://postgres:postgres@localhost:5432/news_box?schema=public"
+OPENAI_API_KEY="your-api-key"
+OPENAI_BASE_URL="https://api.openai.com/v1"
+OPENAI_MODEL="gpt-4o-mini"
+CRON_SECRET="use-a-long-random-secret"
+NEXT_PUBLIC_SITE_URL="http://localhost:3000"
 ```
 
-3. Generate Prisma client and push schema:
+Then set up the database and start the app:
 
 ```bash
 npm run db:generate
 npm run db:push
-```
-
-4. Seed sources + sample article:
-
-```bash
 npm run db:seed
-```
-
-5. Run app:
-
-```bash
 npm run dev
 ```
 
-## Internal APIs
+Open [http://localhost:3000](http://localhost:3000).
 
-All use: `Authorization: Bearer <CRON_SECRET>`
+## APIs
+
+### Public
 
 | Endpoint | Purpose |
-|----------|---------|
-| `POST /api/internal/fetch` | RSS ingest + legacy score on create |
-| `POST /api/internal/score` | AI relevance + importance + `finalScore` (batch) |
-| `POST /api/internal/summarize` | Summaries for `isRelevant !== false` |
-| `POST /api/internal/daily-top` | Daily Top 3 + `DailyBrief` + brief body |
+| --- | --- |
+| `GET /api/articles` | Paginated articles. Supports `category`, `range`, `sort`, `source`, `page`, and `pageSize`. |
+| `GET /api/top` | Today's persisted Top 3, with a ranked-article fallback. |
+| `GET /api/daily-brief` | Latest daily news brief. |
+| `GET /sitemap.xml` | Search-engine sitemap. |
+| `GET /robots.txt` | Crawler instructions. |
 
-## Public APIs
+### Internal jobs
 
-- `GET /api/articles?category=&range=&sort=&source=&page=&pageSize=`
-- `GET /api/top` — today’s persisted Top 3 (fallback to ranked articles if no daily row)
-- `GET /api/daily-brief`
-- `GET /sitemap.xml`
-- `GET /robots.txt`
+Internal endpoints require the following header:
 
-`GET /api/articles` pagination: `page`, `pageSize`, `range`, `sort` (`latest` | `top`), `source`.
+```http
+Authorization: Bearer <CRON_SECRET>
+```
 
-## Railway Cron
+| Endpoint | Purpose |
+| --- | --- |
+| `POST /api/internal/fetch` | Ingest RSS feeds and assign the legacy score. |
+| `POST /api/internal/score` | Batch AI relevance, importance, and final-score calculations. |
+| `POST /api/internal/summarize` | Generate summaries for relevant articles. |
+| `POST /api/internal/daily-top` | Persist the daily Top 3 and daily brief. |
 
-Stagger so score runs after fetch, summarize after score, daily brief once per day:
+## Deployment and Scheduling
 
-| Job | Cron |
-|-----|----------------|
-| fetch | `0 */6 * * *` |
-| score | `10 */6 * * *` |
-| summarize | `*/30 * * * *` |
-| daily-top | `0 6 * * *` |
-| backfill | `15 */ 2 * * *` |
+Deploy the app with a PostgreSQL database on a platform such as Railway or Vercel. Add every variable from `.env.example` in the platform's environment-variable settings; do not upload the `.env` file.
 
-### Steps
+Create protected HTTP cron jobs in this order. Each request needs the `Authorization` header shown above.
 
-1. Deploy app + PostgreSQL on Railway.
-2. Set `DATABASE_URL`, `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_MODEL`, `CRON_SECRET`, `NEXT_PUBLIC_SITE_URL`.
-3. Add four HTTP cron jobs with the header above.
-4. Verify logs: fetch → score → summarize → daily-top.
+| Job | Example cron | Endpoint |
+| --- | --- | --- |
+| Fetch | `0 */6 * * *` | `/api/internal/fetch` |
+| Score | `10 */6 * * *` | `/api/internal/score` |
+| Summarize | `*/30 * * * *` | `/api/internal/summarize` |
+| Daily brief | `0 6 * * *` | `/api/internal/daily-top` |
+
+## Security
+
+- `.env` files are ignored by Git and must remain local or in your deployment provider's secret store.
+- Never place API keys, database URLs, or `CRON_SECRET` values in `NEXT_PUBLIC_*` variables. Those variables are included in the browser bundle.
+- If a secret was ever committed, included in a GitHub issue, or pasted into a public log, rotate it immediately. Removing it from a later commit does not remove it from Git history.
+
+## Scripts
+
+| Command | Purpose |
+| --- | --- |
+| `npm run dev` | Start the local development server. |
+| `npm run lint` | Run ESLint. |
+| `npm run build` | Create a production build. |
+| `npm run db:generate` | Generate the Prisma client. |
+| `npm run db:push` | Apply the Prisma schema to the database. |
+| `npm run db:seed` | Seed sources and a sample article. |
+
+## License
+
+No license has been specified yet. Add a license file before inviting reuse or contributions.

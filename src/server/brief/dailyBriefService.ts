@@ -1,5 +1,6 @@
 import { subHours } from "date-fns";
 import { prisma } from "@/lib/prisma";
+import { pickDiverseArticles } from "@/lib/articleSimilarity";
 import type { Article, Source } from "@prisma/client";
 
 export type ArticleWithSource = Article & { source: Source };
@@ -81,7 +82,7 @@ function isPersistedTitleListOnlyBody(body: string, items: ArticleWithSource[]):
 /** Fallback when DailyBrief not yet generated: recent high-ranked articles only */
 export async function getFallbackTopArticles(): Promise<ArticleWithSource[]> {
   const since = subHours(new Date(), 48);
-  return prisma.article.findMany({
+  const results = await prisma.article.findMany({
     where: {
       isRelevant: true,
       finalScore: { not: null },
@@ -93,9 +94,10 @@ export async function getFallbackTopArticles(): Promise<ArticleWithSource[]> {
       ],
     },
     orderBy: [{ finalScore: "desc" }, { fetchedAt: "desc" }],
-    take: 3,
+    take: 20,
     include: { source: true },
   });
+  return pickDiverseArticles(results, 3);
 }
 
 /**
