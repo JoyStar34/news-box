@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Category } from "@prisma/client";
 import { DISPLAY_SUMMARY_FALLBACK, DISPLAY_WHY_FALLBACK } from "@/lib/articleDisplayDefaults";
 import { getTimeLabel } from "@/lib/articleTimeLabels";
+import { parsePositiveInt } from "@/lib/pagination";
 import { prisma } from "@/lib/prisma";
 import { buildDailyBriefFromStore } from "@/server/brief/dailyBriefService";
 
@@ -147,8 +148,7 @@ export default async function Home({
   const sourceParam = params.source;
   const effectiveRange = normalizeRange(params.range);
   const effectiveSort = normalizeSort(params.sort);
-  const pageParam = Number(params.page ?? "1");
-  const page = Number.isFinite(pageParam) ? Math.max(1, pageParam) : 1;
+  const page = parsePositiveInt(params.page, 1);
   const rangeStart = buildRangeDate(effectiveRange);
 
   const where: {
