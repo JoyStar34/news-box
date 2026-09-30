@@ -74,15 +74,19 @@ async function callText(openai: OpenAI, model: string, input: string): Promise<s
   return (completion.output_text ?? "").trim();
 }
 
-function parseRelevance(text: string): boolean | null {
-  const upper = text.toUpperCase();
-  if (upper.includes("NOT_RELEVANT")) return false;
-  if (upper.includes("RELEVANT") && !upper.includes("NOT_")) return true;
-  if (upper.split(/\s+/).some((w) => w === "RELEVANT")) return true;
+export function parseRelevance(text: string): boolean | null {
+  const normalized = text
+    .trim()
+    .toUpperCase()
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ");
+  if (!normalized) return null;
+  if (/\b(?:NOT\s+RELEVANT|IRRELEVANT)\b/.test(normalized)) return false;
+  if (/\bRELEVANT\b/.test(normalized)) return true;
   return null;
 }
 
-function parseImportance(text: string): number | null {
+export function parseImportance(text: string): number | null {
   const m = text.match(/\b(\d{1,3})\b/);
   if (!m) return null;
   const n = Number(m[1]);
@@ -115,8 +119,8 @@ export async function scorePendingArticles(maxItems: number = BATCH_LIMIT) {
 
   type ScoreOutcome =
     | { kind: "irrelevant" }
-    | { kind: "relevant_no_final" }
     | { kind: "scored"; importance: number; finalScore: number }
+    | { kind: "retry" }
     | { kind: "error" };
 
   const outcomes = await Promise.all(
@@ -131,17 +135,9 @@ export async function scorePendingArticles(maxItems: number = BATCH_LIMIT) {
           const relevant = parseRelevance(relText);
 
           if (relevant === null) {
-            await prisma.article.update({
-              where: { id: article.id },
-              data: {
-                relevanceScore: null,
-                isRelevant: false,
-                importanceScore: null,
-                finalScore: null,
-                score: 0,
-              },
-            });
-            return { kind: "irrelevant" } satisfies ScoreOutcome;
+            console.warn(`[SCORE] unparseable relevance article=${article.id} response=${JSON.stringify(relText)}`);
+            // Leave isRelevant=null so the next score cron can retry this article.
+            return { kind: "retry" } satisfies ScoreOutcome;
           }
 
           if (!relevant) {
@@ -165,16 +161,9 @@ export async function scorePendingArticles(maxItems: number = BATCH_LIMIT) {
           );
           const importance = parseImportance(impText);
           if (importance === null) {
-            await prisma.article.update({
-              where: { id: article.id },
-              data: {
-                relevanceScore: 100,
-                isRelevant: true,
-                importanceScore: null,
-                finalScore: null,
-              },
-            });
-            return { kind: "relevant_no_final" } satisfies ScoreOutcome;
+            console.warn(`[SCORE] unparseable importance article=${article.id} response=${JSON.stringify(impText)}`);
+            // Do not mark the article relevant until finalScore is ready; daily top requires both.
+            return { kind: "retry" } satisfies ScoreOutcome;
           }
 
           const ref = article.publishedAt ?? article.fetchedAt;
@@ -203,13 +192,13 @@ export async function scorePendingArticles(maxItems: number = BATCH_LIMIT) {
   );
 
   const irrelevant = outcomes.filter((o) => o.kind === "irrelevant").length;
-  const relevantNoFinal = outcomes.filter((o) => o.kind === "relevant_no_final").length;
+  const retry = outcomes.filter((o) => o.kind === "retry").length;
   const scored = outcomes.filter((o) => o.kind === "scored").length;
-  const processed = outcomes.filter((o) => o.kind !== "error").length;
+  const processed = outcomes.filter((o) => o.kind !== "error" && o.kind !== "retry").length;
 
   console.log(`[SCORE] evaluating articles=${pending.length}`);
-  console.log(`[SCORE] relevant=${relevantNoFinal + scored} irrelevant=${irrelevant}`);
-  console.log(`[SCORE] scored=${scored}`);
+  console.log(`[SCORE] relevant=${scored} irrelevant=${irrelevant}`);
+  console.log(`[SCORE] scored=${scored} retry=${retry}`);
 
   const scoredRows = outcomes.filter((o): o is Extract<ScoreOutcome, { kind: "scored" }> => o.kind === "scored");
   if (scoredRows.length > 0) {
