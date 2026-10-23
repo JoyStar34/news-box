@@ -13,6 +13,7 @@ export function ensureWhyImportant(value: string | null | undefined): string {
 
 /** 兼容旧调用；语义与 `PERSISTED_WHY_FALLBACK` 相同。 */
 export function defaultWhyImportantFromSummaryRaw(_summaryRaw?: string | null | undefined): string {
+  void _summaryRaw; // Retain the legacy call signature; fallback text is intentionally content-independent.
   return PERSISTED_WHY_FALLBACK;
 }
 

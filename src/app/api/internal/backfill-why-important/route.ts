@@ -4,19 +4,16 @@ import { Prisma } from "@prisma/client";
 import { PERSISTED_WHY_FALLBACK } from "@/lib/articleDisplayDefaults";
 import { isCronAuthorized } from "@/lib/internalAuth";
 import { prisma } from "@/lib/prisma";
+import { positiveInteger } from "@/lib/requestLimits";
 
 const DEFAULT_LIMIT = 500;
 const MAX_LIMIT = 10_000;
 
 /**
  * 一次性 / 定期补齐 whyImportant：null、空串、全空白 → 「暂无解读」
- * GET/POST ?limit= 或 JSON body { "limit": number }
+ * POST ?limit= 或 JSON body { "limit": number }
  */
 export async function POST(request: NextRequest) {
-  return handleBackfill(request);
-}
-
-export async function GET(request: NextRequest) {
   return handleBackfill(request);
 }
 
@@ -27,14 +24,14 @@ async function handleBackfill(request: NextRequest) {
 
   const traceId = randomUUID();
   const url = new URL(request.url);
-  let limit = parseInt(url.searchParams.get("limit") ?? "", 10);
+  let limit = positiveInteger(url.searchParams.get("limit"), 0, MAX_LIMIT);
 
   if (!Number.isFinite(limit) || limit <= 0) {
     if (request.method === "POST") {
       try {
         const body = await request.json();
-        if (body && typeof body.limit === "number" && Number.isFinite(body.limit)) {
-          limit = body.limit;
+        if (body && typeof body.limit === "number") {
+          limit = positiveInteger(body.limit, 0, MAX_LIMIT);
         }
       } catch {
         // no JSON body
@@ -45,7 +42,6 @@ async function handleBackfill(request: NextRequest) {
   if (!Number.isFinite(limit) || limit <= 0) {
     limit = DEFAULT_LIMIT;
   }
-  limit = Math.min(Math.max(1, limit), MAX_LIMIT);
 
   const start = Date.now();
 

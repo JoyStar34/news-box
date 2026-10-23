@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { Category } from "@prisma/client";
+import { safeArticleUrl } from "@/lib/articleUrl";
 
 type RawFeedItem = {
   title?: string;
@@ -27,7 +28,7 @@ function cleanText(input: string | undefined): string {
 
 export function normalizeFeedItem(item: RawFeedItem, category: Category): NormalizedItem | null {
   const title = cleanText(item.title);
-  const url = (item.link ?? "").trim();
+  const url = safeArticleUrl(item.link);
   const summaryRaw = cleanText(item.contentSnippet ?? item.summary ?? item.content);
   const publishedRaw = item.isoDate ?? item.pubDate;
   const publishedAt = publishedRaw ? new Date(publishedRaw) : null;

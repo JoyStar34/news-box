@@ -11,6 +11,7 @@ import { normalizeOptionalDbText } from "@/lib/dbText";
 import { prisma } from "@/lib/prisma";
 import { logOpenAiLatency, logOpenAiUsage } from "@/lib/openaiObservability";
 import { getEnv } from "@/server/config/env";
+import { safeErrorDetails } from "@/lib/safeError";
 
 const partialResultSchema = z.object({
   summaryAi: z.string().min(1).optional(),
@@ -117,7 +118,7 @@ export async function summarizePendingArticles(maxItems = 100) {
     });
   };
 
-  if (!env.OPENAI_API_KEY) {
+  if (!env.OPENAI_API_KEY || !env.OPENAI_MODEL) {
     console.log(`[SUMMARIZE] OPENAI_API_KEY not configured — applying fallbacks`);
     let n = 0;
     for (const article of pending) {
@@ -128,6 +129,7 @@ export async function summarizePendingArticles(maxItems = 100) {
   }
 
   const openai = new OpenAI({ apiKey: env.OPENAI_API_KEY, baseURL: env.OPENAI_BASE_URL });
+  const model = env.OPENAI_MODEL;
 
   const limit = pLimit(3);
 
@@ -150,14 +152,14 @@ export async function summarizePendingArticles(maxItems = 100) {
         try {
           const start = Date.now();
           completion = await openai.responses.create({
-            model: env.OPENAI_MODEL,
+            model,
             temperature: 0.2,
             input: prompt,
           });
           logOpenAiLatency("[SUMMARIZE]", start);
           logOpenAiUsage(completion);
         } catch (error) {
-          console.error(`[ERROR][SUMMARIZE]`, error);
+          console.error(`[ERROR][SUMMARIZE]`, safeErrorDetails(error));
           await writeFallbacks(article);
           return "fail" as const;
         }

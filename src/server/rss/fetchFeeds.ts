@@ -1,6 +1,7 @@
 import Parser from "rss-parser";
 import { PERSISTED_WHY_FALLBACK } from "@/lib/articleDisplayDefaults";
 import { prisma } from "@/lib/prisma";
+import { safeErrorDetails } from "@/lib/safeError";
 import { normalizeFeedItem } from "@/server/rss/normalizeFeedItem";
 import { RSS_SOURCES, sourceSeedForPrisma } from "@/server/rss/sources";
 import { calculateScore } from "@/server/scoring/calculateScore";
@@ -13,10 +14,8 @@ export async function syncSources() {
     const row = sourceSeedForPrisma(source);
     await prisma.source.upsert({
       where: { url: source.url },
-      update: {
-        ...row,
-        isActive: true,
-      },
+      // Do not re-enable a feed that an administrator intentionally disabled.
+      update: row,
       create: row,
     });
   }
@@ -85,7 +84,7 @@ export async function fetchFeeds(traceId?: string) {
       failed += 1;
       console.error(
         `[ERROR][FETCH]${traceId ? ` traceId=${traceId}` : ""} source=${source.name}`,
-        error instanceof Error ? error.message : error,
+        safeErrorDetails(error),
       );
     }
   }

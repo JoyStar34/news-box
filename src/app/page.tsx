@@ -2,6 +2,8 @@ import Link from "next/link";
 import { Category } from "@prisma/client";
 import { DISPLAY_SUMMARY_FALLBACK, DISPLAY_WHY_FALLBACK } from "@/lib/articleDisplayDefaults";
 import { getTimeLabel } from "@/lib/articleTimeLabels";
+import { safeArticleUrl } from "@/lib/articleUrl";
+import { MAX_PAGE, positiveInteger } from "@/lib/requestLimits";
 import { prisma } from "@/lib/prisma";
 import { buildDailyBriefFromStore } from "@/server/brief/dailyBriefService";
 
@@ -40,7 +42,7 @@ function buildRangeDate(range: string | undefined): Date | null {
     "7d": 7 * 24 * hour,
     "30d": 30 * 24 * hour,
   };
-  if (!(range in map)) return null;
+  if (!Object.hasOwn(map, range)) return null;
   return new Date(now - map[range as RangeKey]);
 }
 
@@ -147,8 +149,7 @@ export default async function Home({
   const sourceParam = params.source;
   const effectiveRange = normalizeRange(params.range);
   const effectiveSort = normalizeSort(params.sort);
-  const pageParam = Number(params.page ?? "1");
-  const page = Number.isFinite(pageParam) ? Math.max(1, pageParam) : 1;
+  const page = positiveInteger(params.page, 1, MAX_PAGE);
   const rangeStart = buildRangeDate(effectiveRange);
 
   const where: {
@@ -248,7 +249,7 @@ export default async function Home({
         <div className="flex items-center justify-between gap-2">
           <h2 className="text-xl font-semibold">Today in Science</h2>
           <span className="shrink-0 rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-900">
-            每天 6:00 AM 更新
+            由定时任务更新
           </span>
         </div>
         <p className="mt-3 whitespace-pre-line text-sm text-zinc-700">{brief.text}</p>
@@ -282,9 +283,9 @@ export default async function Home({
               <p className="mt-2 rounded-lg bg-zinc-100 p-2 text-xs text-zinc-700">
                 为什么重要：{article.whyImportant?.trim() || DISPLAY_WHY_FALLBACK}
               </p>
-              <Link className="mt-3 inline-block text-sm text-blue-600 hover:underline" href={article.url} target="_blank">
+              {safeArticleUrl(article.url) ? <Link className="mt-3 inline-block text-sm text-blue-600 hover:underline" href={safeArticleUrl(article.url)!} target="_blank" rel="noopener noreferrer">
                 阅读原文
-              </Link>
+              </Link> : null}
             </article>
           ))}
         </div>
@@ -378,9 +379,9 @@ export default async function Home({
               <p className="mt-2 rounded-lg bg-zinc-100 p-2 text-xs text-zinc-700">
                 为什么重要：{article.whyImportant?.trim() || DISPLAY_WHY_FALLBACK}
               </p>
-              <Link className="mt-2 inline-block text-sm text-blue-600 hover:underline" href={article.url} target="_blank">
+              {safeArticleUrl(article.url) ? <Link className="mt-2 inline-block text-sm text-blue-600 hover:underline" href={safeArticleUrl(article.url)!} target="_blank" rel="noopener noreferrer">
                 原文链接
-              </Link>
+              </Link> : null}
             </article>
           ))}
         </div>

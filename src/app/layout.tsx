@@ -1,24 +1,12 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
 import Script from "next/script";
+import { getPlausibleDomain, getSiteUrl } from "@/lib/siteConfig";
 import "./globals.css";
 
-const enablePlausible =
-  process.env.NODE_ENV === "production" ||
-  process.env.NEXT_PUBLIC_ENABLE_PLAUSIBLE === "true";
-
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
+const plausibleDomain = getPlausibleDomain();
 
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"),
+  metadataBase: getSiteUrl(),
   title: {
     default: "News Box",
     template: "%s | News Box",
@@ -59,15 +47,15 @@ export default function RootLayout({
 }>) {
   return (
     <html
-      lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      lang="zh-CN"
+      className="h-full antialiased"
     >
       <head>
-        {enablePlausible ? (
+        {plausibleDomain ? (
           <>
             <Script
               defer
-              data-domain="news-box-production.up.railway.app"
+              data-domain={plausibleDomain}
               src="https://plausible.io/js/script.js"
               strategy="afterInteractive"
             />

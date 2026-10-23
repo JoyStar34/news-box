@@ -3,6 +3,7 @@ import { subDays, subHours } from "date-fns";
 import { prisma } from "@/lib/prisma";
 import { logOpenAiLatency, logOpenAiUsage } from "@/lib/openaiObservability";
 import { getEnv } from "@/server/config/env";
+import { safeErrorDetails } from "@/lib/safeError";
 import type { Article, Source } from "@prisma/client";
 import { formatBriefTextForDisplay } from "@/server/brief/dailyBriefService";
 import { pickDiverseArticles } from "@/lib/articleSimilarity";
@@ -72,7 +73,8 @@ export async function generateDailyTopNews(): Promise<{
   });
 
   const stripAdj = (a: WithAdj): WithSource => {
-    const { adjustedScore: _, ...rest } = a;
+    const { adjustedScore, ...rest } = a;
+    void adjustedScore;
     return rest;
   };
 
@@ -88,7 +90,7 @@ export async function generateDailyTopNews(): Promise<{
 
   let chosen: WithSource[] = fallbackTop3;
 
-  if (env.OPENAI_API_KEY && candidates.length >= 1) {
+  if (env.OPENAI_API_KEY && env.OPENAI_MODEL && candidates.length >= 1) {
     const openai = new OpenAI({ apiKey: env.OPENAI_API_KEY, baseURL: env.OPENAI_BASE_URL });
     const list = candidates.map((a, i) => `${i + 1}. ${a.title} (${a.source.name})`).join("\n");
     const pickPrompt = `From these ${candidates.length} AI/science news articles (focused on roughly the last 48 hours), select the 3 most important stories.
@@ -140,7 +142,7 @@ ${list}`;
         chosen = pickDiverseArticles([...matched, ...rest], 3, undefined, "[DAILY_TOP]");
       }
     } catch (err) {
-      console.error(`[ERROR][DAILY_TOP]`, err);
+      console.error(`[ERROR][DAILY_TOP]`, safeErrorDetails(err));
       chosen = fallbackTop3;
     }
   }
@@ -155,7 +157,7 @@ ${list}`;
   console.log(`[DAILY_TOP] selected=[${chosen.map((a) => a.id).join(",")}]`);
 
   let body = chosen.map((a, i) => `${i + 1}. ${a.title}`).join("\n");
-  if (env.OPENAI_API_KEY) {
+  if (env.OPENAI_API_KEY && env.OPENAI_MODEL) {
     const openai = new OpenAI({ apiKey: env.OPENAI_API_KEY, baseURL: env.OPENAI_BASE_URL });
     const listText = chosen.map((a, i) => `${i + 1}. ${a.title} (${a.source.name})`).join("\n");
     try {
@@ -170,7 +172,7 @@ ${list}`;
       const briefOut = completion.output_text?.trim();
       body = briefOut ? formatBriefTextForDisplay(briefOut) : body;
     } catch (err) {
-      console.error(`[ERROR][DAILY_TOP]`, err);
+      console.error(`[ERROR][DAILY_TOP]`, safeErrorDetails(err));
       // keep body as title list
     }
   }

@@ -3,6 +3,7 @@ import pLimit from "p-limit";
 import { prisma } from "@/lib/prisma";
 import { logOpenAiLatency, logOpenAiUsage } from "@/lib/openaiObservability";
 import { getEnv } from "@/server/config/env";
+import { safeErrorDetails } from "@/lib/safeError";
 import { computeFinalScore, computeFreshnessScore } from "@/server/scoring/freshness";
 
 const BATCH_LIMIT = 30;
@@ -96,7 +97,7 @@ function parseImportance(text: string): number | null {
  */
 export async function scorePendingArticles(maxItems: number = BATCH_LIMIT) {
   const env = getEnv();
-  if (!env.OPENAI_API_KEY) {
+  if (!env.OPENAI_API_KEY || !env.OPENAI_MODEL) {
     console.log(`[SCORE] OPENAI_API_KEY not configured`);
     return { processed: 0, skipped: 0, reason: "OPENAI_API_KEY not configured" as const };
   }
@@ -194,7 +195,7 @@ export async function scorePendingArticles(maxItems: number = BATCH_LIMIT) {
           });
           return { kind: "scored", importance, finalScore: final } satisfies ScoreOutcome;
         } catch (err) {
-          console.error(`[ERROR][SCORE]`, err);
+          console.error(`[ERROR][SCORE]`, safeErrorDetails(err));
           // Skip batch item on LLM/network failure; next cron retries null rows
           return { kind: "error" } satisfies ScoreOutcome;
         }

@@ -3,18 +3,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { isCronAuthorized } from "@/lib/internalAuth";
 import { recordLastSummarize } from "@/lib/pipelineMetrics";
 import { summarizePendingArticles } from "@/server/ai/summarize";
+import { positiveInteger } from "@/lib/requestLimits";
 
 function parseMaxItems(request: NextRequest): number {
   const url = new URL(request.url);
   const q = url.searchParams.get("maxItems") ?? url.searchParams.get("limit");
-  let maxItems = 100;
-  if (q) {
-    const n = parseInt(q, 10);
-    if (Number.isFinite(n) && n > 0) {
-      maxItems = Math.min(500, n);
-    }
-  }
-  return maxItems;
+  return positiveInteger(q, 100, 500);
 }
 
 export async function POST(request: NextRequest) {
@@ -29,8 +23,8 @@ export async function POST(request: NextRequest) {
   let maxItems = parseMaxItems(request);
   try {
     const body = await request.json();
-    if (body && typeof body.maxItems === "number" && Number.isFinite(body.maxItems) && body.maxItems > 0) {
-      maxItems = Math.min(500, body.maxItems);
+    if (body && typeof body.maxItems === "number") {
+      maxItems = positiveInteger(body.maxItems, maxItems, 500);
     }
   } catch {
     // no JSON body
